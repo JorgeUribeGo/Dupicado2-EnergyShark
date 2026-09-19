@@ -1,0 +1,272 @@
+openapi: 3.0.3
+info:
+  title: EnergyShark — API interna (E1)
+  version: "1.0.0"
+  description: >
+    API consumida por el frontend. Todos los endpoints excepto /health van detrás
+    del JWT validado por el authorizer del API Gateway (Auth0). Convención de
+    paginación idéntica a la ya usada en /history de la E0 (page/limit/total/totalPages/data)
+    para no introducir un segundo estilo de paginación en el mismo sistema.
+
+servers:
+  - url: https://api.energyshark.example.com
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    PaginationEnvelope:
+      type: object
+      required: [page, limit, total, totalPages, data]
+      properties:
+        page: { type: integer, example: 1 }
+        limit: { type: integer, example: 25 }
+        total: { type: integer, example: 340 }
+        totalPages: { type: integer, example: 14 }
+        data:
+          type: array
+          items: {}
+
+    CycleSummary:
+      type: object
+      properties:
+        cycleId: { type: string, example: "cycle-9431" }
+        phase: { type: string, enum: [negotiating, consuming, closed] }
+        windowOpensAt: { type: string, format: date-time }
+        windowClosesAt: { type: string, format: date-time }
+        statusStatement:
+          type: object
+          nullable: true
+          properties:
+            energy:
+              type: object
+              properties:
+                generationCapacity: { type: number }
+                consumption: { type: number }
+                generationCost: { type: number }
+            validUntil: { type: string, format: date-time }
+        transfersReceived:
+          type: array
+          items:
+            type: object
+            properties:
+              msgId: { type: string, format: uuid }
+              quantity: { type: number }
+              becauseOf: { type: string, format: uuid, nullable: true }
+              receivedAt: { type: string, format: date-time }
+        demandStatementsApplied:
+          type: array
+          items:
+            type: object
+            properties:
+              msgId: { type: string, format: uuid }
+              quantity: { type: number }
+              valuePerKwh: { type: number }
+              appliedAt: { type: string, format: date-time }
+        voluntaryNegotiations:
+          type: array
+          items: { $ref: "#/components/schemas/Negotiation" }
+        negotiationReportSent:
+          type: object
+          nullable: true
+          properties:
+            budgetBalance: { type: number }
+            energyBalance: { type: number }
+            sentAt: { type: string, format: date-time }
+        finalBalances:
+          type: object
+          properties:
+            budget: { type: number }
+            energy: { type: number }
+        lastOperationApplied:
+          type: object
+          nullable: true
+          properties:
+            type: { type: string }
+            appliedAt: { type: string, format: date-time }
+
+    Negotiation:
+      type: object
+      properties:
+        id: { type: integer }
+        cycleId: { type: string }
+        idpk: { type: string, format: uuid }
+        direction: { type: string, enum: [give, take] }
+        quantity: { type: number }
+        pricePerEnergy: { type: number, description: "Techo ofertado por nosotros." }
+        settledPricePerEnergy: { type: number, nullable: true, description: "Precio real de liquidación (generationCost o 1.05x)." }
+        status: { type: string, enum: [proposed, confirmed, paid, expired, rejected] }
+        proposedAt: { type: string, format: date-time }
+        confirmedAt: { type: string, format: date-time, nullable: true }
+        paidAt: { type: string, format: date-time, nullable: true }
+
+    DistanceTable:
+      type: object
+      properties:
+        cityId: { type: string }
+        updatedAt: { type: string, format: date-time }
+        distances:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              distance: { type: number }
+              transportCost: { type: number }
+              enabled: { type: boolean }
+
+    RejectedMessage:
+      type: object
+      properties:
+        id: { type: integer }
+        kind: { type: string, enum: [duplicate, nack, discarded] }
+        type: { type: string, description: "Tipo del mensaje original, si se pudo determinar." }
+        idpk: { type: string, format: uuid, nullable: true }
+        msgId: { type: string, format: uuid, nullable: true }
+        reason: { type: string, nullable: true }
+        code: { type: integer, nullable: true }
+        detail: { type: string }
+        occurredAt: { type: string, format: date-time }
+
+security:
+  - bearerAuth: []
+
+paths:
+  /health:
+    get:
+      summary: Healthcheck (sin auth)
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: "ok" }
+                  dbConnected: { type: boolean }
+                  brokerConnected: { type: boolean }
+
+  /api/cycles:
+    get:
+      summary: Historial de ciclos (RF01)
+      parameters:
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, default: 25 } }
+      responses:
+        "200":
+          description: Lista paginada
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PaginationEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/CycleSummary" }
+
+  /api/cycles/{cycleId}:
+    get:
+      summary: Detalle de un ciclo
+      parameters:
+        - { name: cycleId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Detalle
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CycleSummary" }
+        "404":
+          description: cycleId no existe
+
+  /api/distance-table:
+    get:
+      summary: Tabla de conectividad vigente (RF02)
+      responses:
+        "200":
+          description: Tabla actual
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DistanceTable" }
+
+  /api/negotiations:
+    get:
+      summary: Historial de negociaciones voluntarias (RF04)
+      parameters:
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, default: 25 } }
+        - { name: status, in: query, schema: { type: string, enum: [proposed, confirmed, paid, expired, rejected] } }
+      responses:
+        "200":
+          description: Lista paginada
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PaginationEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/Negotiation" }
+    post:
+      summary: Crear una propuesta de negociación manual (RF04)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [cycleId, direction, quantity, pricePerEnergy]
+              properties:
+                cycleId: { type: string }
+                direction: { type: string, enum: [give, take] }
+                quantity: { type: number, exclusiveMinimum: 0 }
+                pricePerEnergy: { type: number, exclusiveMinimum: 0 }
+      responses:
+        "201":
+          description: Propuesta creada y publicada al broker
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Negotiation" }
+        "409":
+          description: "cycleId ya cerrado o fuera de ventana de negociación"
+
+  /api/negotiations/{id}:
+    get:
+      summary: Seguimiento de una negociación
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: Estado actual
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Negotiation" }
+
+  /api/messages/rejected:
+    get:
+      summary: Log de duplicados, descartados y NACKs (RF05)
+      parameters:
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, default: 25 } }
+        - { name: kind, in: query, schema: { type: string, enum: [duplicate, nack, discarded] } }
+      responses:
+        "200":
+          description: Lista paginada
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PaginationEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/RejectedMessage" }

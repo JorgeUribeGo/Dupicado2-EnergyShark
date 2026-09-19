@@ -1,0 +1,22 @@
+{
+  "$id": "https://energyshark.internal/schemas/messages/negotiation-report.schema.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "negotiation-report — cierre de ventana (ciudad -> central)",
+  "description": "Obligatorio dentro de los últimos 5 minutos de la ventana. No enviarlo implica multa de 50000 créditos en el siguiente budget.",
+  "allOf": [{ "$ref": "../envelope.schema.json" }],
+  "type": "object",
+  "properties": {
+    "type": { "const": "negotiation-report" },
+    "cityId": { "type": "string" },
+    "cycleId": { "type": "string" },
+    "data": {
+      "type": "object",
+      "required": ["budgetBalance", "energyBalance"],
+      "properties": {
+        "budgetBalance": { "type": "number" },
+        "energyBalance": { "type": "number" }
+      }
+    }
+  },
+  "required": ["type", "cityId", "cycleId", "data"]
+}

@@ -1,0 +1,26 @@
+{
+  "$id": "https://energyshark.internal/schemas/messages/negotiation-proposal.schema.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "negotiation-proposal — propuesta voluntaria (ciudad -> central)",
+  "allOf": [{ "$ref": "../envelope.schema.json" }],
+  "type": "object",
+  "properties": {
+    "type": { "const": "negotiation-proposal" },
+    "cityId": { "type": "string" },
+    "cycleId": { "type": "string" },
+    "data": {
+      "type": "object",
+      "required": ["direction", "quantity", "pricePerEnergy"],
+      "properties": {
+        "direction": { "type": "string", "enum": ["give", "take"] },
+        "quantity": { "type": "number", "exclusiveMinimum": 0, "description": "kWh" },
+        "pricePerEnergy": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Techo ofertado, NO el precio final. La central liquida a generationCost (take) o 1.05*generationCost (give)."
+        }
+      }
+    }
+  },
+  "required": ["type", "cityId", "cycleId", "data"]
+}

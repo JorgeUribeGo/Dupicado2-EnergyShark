@@ -1,0 +1,19 @@
+{
+  "$id": "https://energyshark.internal/schemas/messages/ack.schema.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ack — confirmación de recepción (bidireccional)",
+  "description": "Solo confirma recepción, no aceptación del contenido. Nunca se hace ack de un ack.",
+  "allOf": [{ "$ref": "../envelope.schema.json" }],
+  "type": "object",
+  "properties": {
+    "type": { "const": "ack" },
+    "data": {
+      "type": "object",
+      "required": ["target"],
+      "properties": {
+        "target": { "type": "string", "format": "uuid", "description": "msgId del mensaje respondido." }
+      }
+    }
+  },
+  "required": ["type", "data"]
+}

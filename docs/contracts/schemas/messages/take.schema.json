@@ -1,0 +1,23 @@
+{
+  "$id": "https://energyshark.internal/schemas/messages/take.schema.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "take — confirmación de compra de energía (central -> ciudad)",
+  "description": "Respuesta a un negotiation-proposal con direction=take, dentro de 30s. La ciudad, como parte pagadora, debe emitir el transfer correspondiente y descontarlo de sus fondos.",
+  "allOf": [{ "$ref": "../envelope.schema.json" }],
+  "type": "object",
+  "properties": {
+    "type": { "const": "take" },
+    "sender": { "const": "central" },
+    "cycleId": { "type": "string" },
+    "data": {
+      "type": "object",
+      "required": ["target", "energy", "pricePerEnergy"],
+      "properties": {
+        "target": { "type": "string", "format": "uuid", "description": "msgId de la propuesta." },
+        "energy": { "type": "number" },
+        "pricePerEnergy": { "type": "number", "description": "generationCost del ciclo" }
+      }
+    }
+  },
+  "required": ["type", "sender", "cycleId", "data"]
+}

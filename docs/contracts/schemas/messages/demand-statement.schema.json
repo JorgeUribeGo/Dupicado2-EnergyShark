@@ -1,0 +1,28 @@
+{
+  "$id": "https://energyshark.internal/schemas/messages/demand-statement.schema.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "demand-statement — orden de intercambio forzoso (central -> ciudad)",
+  "description": "No confundir con 'demand-set' de la E0 (eso informaba niveles de demanda; esto es una orden de aplicación inmediata al ledger). Requiere ACK y no lleva confirmaciones ni transferencia propia.",
+  "allOf": [{ "$ref": "../envelope.schema.json" }],
+  "type": "object",
+  "properties": {
+    "type": { "const": "demand-statement" },
+    "sender": { "const": "central" },
+    "cycleId": { "type": "string" },
+    "data": {
+      "type": "object",
+      "required": ["balance"],
+      "properties": {
+        "balance": {
+          "type": "object",
+          "required": ["quantity", "valuePerKwh"],
+          "properties": {
+            "quantity": { "type": "number", "description": "kWh. Puede ser negativo (la central retira energía)." },
+            "valuePerKwh": { "type": "number", "description": "créditos" }
+          }
+        }
+      }
+    }
+  },
+  "required": ["type", "sender", "cycleId", "data"]
+}

@@ -1,0 +1,23 @@
+{
+  "$id": "https://energyshark.internal/schemas/messages/request.schema.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "request — petición directa (ciudad -> central)",
+  "allOf": [{ "$ref": "../envelope.schema.json" }],
+  "type": "object",
+  "properties": {
+    "type": { "const": "request" },
+    "cityId": { "type": "string" },
+    "data": {
+      "type": "object",
+      "required": ["ask"],
+      "properties": {
+        "ask": {
+          "type": "string",
+          "description": "Ej. 'distance-table', 'status-statement'. El enunciado no cierra el enum; documentar cualquier valor nuevo que la central acepte."
+        }
+      }
+    }
+  },
+  "required": ["type", "cityId", "data"],
+  "not": { "required": ["cycleId"] }
+}

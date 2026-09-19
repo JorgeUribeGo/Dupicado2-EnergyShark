@@ -1,0 +1,41 @@
+{
+  "$id": "https://energyshark.internal/schemas/envelope.schema.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Envelope base — protocolo v2",
+  "description": "Campos comunes a TODO mensaje, recibido o enviado. Cada schema de tipo (ver ./messages/) hace allOf sobre este.",
+  "type": "object",
+  "required": ["idpk", "msgId", "type", "timestamp"],
+  "properties": {
+    "idpk": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Llave de idempotencia. Generada UNA vez por operación lógica y reutilizada en cada reintento (nuevo msgId, mismo idpk). Debe diferir de msgId — esa igualdad se valida en código (NACK IDPK_EQUALS_MSGID), no es expresable de forma limpia en JSON Schema puro."
+    },
+    "msgId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Aleatorio, nuevo en cada mensaje (incluido cada reintento). Lo fija quien envía."
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "request", "status-statement", "transfer", "distance-table",
+        "demand-statement", "negotiation-proposal", "negotiation-report",
+        "ack", "nack", "error", "give", "take"
+      ]
+    },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "cityId": {
+      "type": "string",
+      "description": "Presente cuando el emisor es una ciudad (su code)."
+    },
+    "sender": {
+      "const": "central",
+      "description": "Presente cuando el emisor es la central."
+    },
+    "cycleId": {
+      "type": "string",
+      "description": "Presente en mensajes ligados a un ciclo. 'request' no lo lleva. Tratarlo como cadena opaca (no derivar orden ni significado de su valor)."
+    }
+  }
+}

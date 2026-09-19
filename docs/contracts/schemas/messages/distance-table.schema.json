@@ -1,0 +1,33 @@
+{
+  "$id": "https://energyshark.internal/schemas/messages/distance-table.schema.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "distance-table — tabla de distancias/costos (central -> ciudad)",
+  "description": "AMBIGÜEDAD A CONFIRMAR: el ejemplo del enunciado muestra 'cityId' sin 'sender' visible, pero la regla general dice que todo mensaje de la central lleva 'sender'. Este schema asume que AMBOS coexisten en este tipo (sender=central porque lo emite la central; cityId = de qué ciudad es la tabla). Verificar con el ayudante antes de depender de esto en producción.",
+  "allOf": [{ "$ref": "../envelope.schema.json" }],
+  "type": "object",
+  "properties": {
+    "type": { "const": "distance-table" },
+    "sender": { "const": "central" },
+    "cityId": { "type": "string", "description": "Ciudad a la que pertenece esta tabla (asumido; confirmar)." },
+    "data": {
+      "type": "object",
+      "required": ["distances"],
+      "properties": {
+        "distances": {
+          "type": "object",
+          "description": "Mapa code-de-ciudad -> info de ruta.",
+          "additionalProperties": {
+            "type": "object",
+            "required": ["distance", "transportCost", "enabled"],
+            "properties": {
+              "distance": { "type": "number", "description": "metros" },
+              "transportCost": { "type": "number", "description": "créditos / (kWh*km)" },
+              "enabled": { "type": "boolean" }
+            }
+          }
+        }
+      }
+    }
+  },
+  "required": ["type", "data"]
+}

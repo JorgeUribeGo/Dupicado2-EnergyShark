@@ -1,0 +1,29 @@
+{
+  "$id": "https://energyshark.internal/schemas/messages/status-statement.schema.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "status-statement — estado de capacidad (central -> ciudad)",
+  "allOf": [{ "$ref": "../envelope.schema.json" }],
+  "type": "object",
+  "properties": {
+    "type": { "const": "status-statement" },
+    "sender": { "const": "central" },
+    "cycleId": { "type": "string" },
+    "data": {
+      "type": "object",
+      "required": ["energy", "validUntil"],
+      "properties": {
+        "energy": {
+          "type": "object",
+          "required": ["generationCapacity", "consumption", "generationCost"],
+          "properties": {
+            "generationCapacity": { "type": "number", "description": "kWh" },
+            "consumption": { "type": "number", "description": "kWh" },
+            "generationCost": { "type": "number", "description": "créditos" }
+          }
+        },
+        "validUntil": { "type": "string", "format": "date-time" }
+      }
+    }
+  },
+  "required": ["type", "sender", "cycleId", "data"]
+}

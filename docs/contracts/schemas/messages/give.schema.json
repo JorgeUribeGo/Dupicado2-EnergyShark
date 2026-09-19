@@ -1,0 +1,23 @@
+{
+  "$id": "https://energyshark.internal/schemas/messages/give.schema.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "give — confirmación de venta de energía (central -> ciudad)",
+  "description": "Respuesta a un negotiation-proposal con direction=give, dentro de 30s. Tras recibirlo, la ciudad espera el transfer de la central dentro de 30s; si no llega, reintenta la operación con el mismo idpk.",
+  "allOf": [{ "$ref": "../envelope.schema.json" }],
+  "type": "object",
+  "properties": {
+    "type": { "const": "give" },
+    "sender": { "const": "central" },
+    "cycleId": { "type": "string" },
+    "data": {
+      "type": "object",
+      "required": ["target", "energy", "pricePerEnergy"],
+      "properties": {
+        "target": { "type": "string", "format": "uuid", "description": "msgId de la propuesta." },
+        "energy": { "type": "number" },
+        "pricePerEnergy": { "type": "number", "description": "round2(1.05 * generationCost)" }
+      }
+    }
+  },
+  "required": ["type", "sender", "cycleId", "data"]
+}

@@ -1,0 +1,21 @@
+{
+  "$id": "https://energyshark.internal/schemas/messages/transfer.schema.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "transfer — traspaso de fondos (bidireccional)",
+  "description": "Dos usos: (a) transferencia inicial de budget de la central al abrir la ventana (sin becauseOf); (b) pago tras una confirmación give/take (con becauseOf = msgId de la confirmación).",
+  "allOf": [{ "$ref": "../envelope.schema.json" }],
+  "type": "object",
+  "properties": {
+    "type": { "const": "transfer" },
+    "cycleId": { "type": "string" },
+    "data": {
+      "type": "object",
+      "required": ["quantity"],
+      "properties": {
+        "quantity": { "type": "number", "description": "Créditos. Monto acordado = energy * pricePerEnergy cuando es un pago." },
+        "becauseOf": { "type": "string", "format": "uuid", "description": "msgId de la confirmación (give/take) que origina este pago. Ausente si es la transferencia inicial de budget del ciclo." }
+      }
+    }
+  },
+  "required": ["type", "cycleId", "data"]
+}

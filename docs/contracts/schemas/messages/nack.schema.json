@@ -1,0 +1,29 @@
+{
+  "$id": "https://energyshark.internal/schemas/messages/nack.schema.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "nack — rechazo de RECEPCIÓN (bidireccional)",
+  "description": "Nunca lleva ack previo. Nunca se hace nack de un nack. No se esperan acciones más que el reenvío correctamente formado.",
+  "allOf": [
+    { "$ref": "../envelope.schema.json" },
+    { "if": { "properties": { "reason": { "const": "MALFORMED_MESSAGE" } } }, "then": { "properties": { "code": { "const": 422 } } } },
+    { "if": { "properties": { "reason": { "const": "UNKNOWN_TYPE" } } }, "then": { "properties": { "code": { "const": 400 } } } },
+    { "if": { "properties": { "reason": { "const": "IDPK_EQUALS_MSGID" } } }, "then": { "properties": { "code": { "const": 422 } } } },
+    { "if": { "properties": { "reason": { "const": "IDENTITY_MISMATCH" } } }, "then": { "properties": { "code": { "const": 403 } } } }
+  ],
+  "type": "object",
+  "properties": {
+    "type": { "const": "nack" },
+    "reason": { "type": "string", "enum": ["MALFORMED_MESSAGE", "UNKNOWN_TYPE", "IDPK_EQUALS_MSGID", "IDENTITY_MISMATCH"] },
+    "code": { "type": "integer", "enum": [400, 403, 422] },
+    "data": {
+      "type": "object",
+      "required": ["target", "message"],
+      "properties": {
+        "target": { "type": "string", "format": "uuid", "description": "msgId del mensaje respondido." },
+        "message": { "type": "string", "description": "Texto humano describiendo la falla." },
+        "cycleId": { "type": "string", "description": "Solo si el mensaje rechazado traía uno." }
+      }
+    }
+  },
+  "required": ["type", "reason", "code", "data"]
+}
