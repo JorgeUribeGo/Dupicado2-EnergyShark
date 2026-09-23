@@ -106,3 +106,34 @@ exactamente la anomalía #4 de la demo (caída de contenedor, el `negotiation-re
   `rejected_messages` (kind: `discarded`), **no** hacer `ack` del canal (no hay a quién responder,
   pero sí se puede/debe hacer ack del mensaje AMQP para no bloquear la cola con un mensaje irrecuperable);
   si parsea pero falla schema → responder NACK vía outbox y sí hacer `ack` del mensaje AMQP.
+
+### Addendum — topología real confirmada (2026-09-22, con las credenciales que dio el curso)
+
+Los valores concretos (vhost, exchange, usuario/cola de esta ciudad) son credenciales y **no se
+documentan aquí** — viven solo en `.env` (no versionado; ver `connector/src/config.js` para las
+variables esperadas). Lo que sí es relevante para cualquiera que lea este ADR es la forma de la
+topología, no sus valores:
+
+- El usuario AMQP propio y la routing key propia son el mismo valor (patrón `city.{CODE}`), y la
+  cola propia sigue el patrón `city.{CODE}.q`.
+- La cola propia recibe mensajes por **dos** routing keys: la propia (dirigidos solo a esta
+  ciudad) y `city.broadcast` (difusión a todas las ciudades) — el handler de consumo lee
+  `msg.fields.routingKey` y no asume que todo lo que llega es exclusivamente propio.
+- La central publica con routing key `central`.
+- **Prohibido declarar/modificar/eliminar** colas, exchanges o bindings: la topología es del
+  servidor y las credenciales de la ciudad no tienen permiso para `assertQueue`/`assertExchange`/
+  `bindQueue` en modo no-pasivo — una declaración normal contra esta topología falla por permisos
+  y cierra el canal. Cualquier verificación de existencia debe usar `{ passive: true }` o
+  `channel.checkQueue`. `consumer.js` de U1 no declara nada.
+- **No desactivar la verificación de certificado TLS** en la conexión `amqps://`, aunque aparezca
+  un error de certificado durante pruebas — investigar la causa real, no bypassearla.
+- **`user_id` AMQP es unidireccional, no bidireccional — confirmado contra el broker real.**
+  Se probó un chequeo de `IDENTITY_MISMATCH` al consumir (comparar `msg.properties.userId`
+  contra `sender:"central"` del body), asumiendo que aplicaba en ambos sentidos. En la práctica,
+  la central **no adjunta `user_id`** al publicar hacia las ciudades: `msg.properties.userId`
+  llegó consistentemente ausente en mensajes legítimos de varios ciclos distintos, lo que
+  provocaba NACK `IDENTITY_MISMATCH` del 100% de los mensajes reales. Se retiró el chequeo del
+  lado de consumo (U1). Releyendo el enunciado con este dato: la verificación de `user_id` es
+  algo que **la central hace sobre lo que nosotros publicamos**, no algo que nosotros debamos
+  verificar al recibir — le corresponde a U2 asegurarse de adjuntar `userId` (el propio, patrón
+  `city.{CODE}`) en cada `channel.publish(...)`, no a U1 validarlo en la entrada.

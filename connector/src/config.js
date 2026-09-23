@@ -14,8 +14,13 @@ module.exports = {
             return `${this.username}.q`;
         },
     },
-    master: {
-        eventsUrl: process.env.MASTER_EVENTS_URL || 'http://localhost:3000/events',
+    db: {
+        user: process.env.DB_USER,
+        password: process.env.DB_PASSWORD,
+        name: process.env.DB_NAME,
+        host: process.env.DB_HOST,
+        port: process.env.DB_PORT,
+        ssl: process.env.DB_SSL === 'true',
     },
     reconnect: {
         initialDelayMs: 1000,

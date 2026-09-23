@@ -51,14 +51,15 @@ services:
 
   connector:
     build:
-      context: ./connector
+      context: .
+      dockerfile: connector/Dockerfile
     restart: unless-stopped
     env_file:
       - ./connector/.env
     environment:
-      MASTER_EVENTS_URL: http://master1:3000/events
+      DB_HOST: db
     depends_on:
-      master1:
+      db:
         condition: service_healthy
     networks:
       - energyshark-net

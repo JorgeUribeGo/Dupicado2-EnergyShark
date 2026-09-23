@@ -107,6 +107,14 @@ ciclo, no una operación aplicada.
 
 ## Notas de implementación para U3/U4/U7/U9
 
+- **Trampa de sequelize-cli con `DEFAULT now()`** (encontrada implementando la migración de
+  `rejected_messages` en U1, verificado empíricamente contra Postgres real): en una migración,
+  `defaultValue: Sequelize.NOW` **no genera** `DEFAULT now()` en la DDL — es un default de nivel
+  aplicación que Sequelize solo aplica al insertar a través de sus propios modelos. Como
+  `connector` inserta con `pg` crudo (sin modelos Sequelize) en `cycles`, `ledger_events`,
+  `outbox_messages` y `pending_operations`, cualquier columna `TIMESTAMPTZ NOT NULL DEFAULT now()`
+  de este ADR (y de ADR-003) necesita `defaultValue: Sequelize.literal('now()')` en la migración,
+  o el insert falla con `null value ... violates not-null constraint`.
 - Insertar en `ledger_events` y actualizar el balance corriente en la misma transacción de DB que
   hace `ack` (a nivel de aplicación) al mensaje AMQP correspondiente.
 - Duplicado detectado (mismo `idpk` ya existe en `ledger_events`): no reinsertar, responder igual
