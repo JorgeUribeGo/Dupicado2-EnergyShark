@@ -14,6 +14,7 @@ sesión (sin subagentes). El texto en "Prompt utilizado" de cada archivo es lite
 | `tarea-u3/` | U3 — migraciones y modelos | `feat/u3-u4-u7-ledger` |
 | `tarea-u4-u7/` | U4 + U7 — aplicar mensajes al ledger | `feat/u3-u4-u7-ledger` |
 | `tarea-u9/` | U9 — endpoints REST de lectura | `feat/u9-endpoints-lectura` (apilado sobre el anterior) |
+| `tarea-u10/` | U10 — negociaciones manuales, lado api (opción A) | `feat/u10-negociacion-manual` (apilado sobre U9) |
 
-Tareas **no** ejecutadas: U10 (bloqueada por la decisión abierta api→connector, ver reparto) y el
+Tareas **no** ejecutadas: el sweeper de filas `requested` (parte de U6, David) y el
 endpoint `GET /api/distance-table` de U9 (depende del U8 de Esteban).
