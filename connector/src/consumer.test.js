@@ -7,10 +7,12 @@ jest.mock('./config', () => ({
 // abriría una conexión pg de verdad solo por curiosear la forma del módulo.
 jest.mock('./db/rejectedMessagesRepo', () => ({ insertRejected: jest.fn() }));
 jest.mock('./outbox', () => ({ publishOutbound: jest.fn() }));
+jest.mock('./db/ledgerRepo', () => ({ applyToLedger: jest.fn() }));
 jest.mock('fs');
 
 const { insertRejected } = require('./db/rejectedMessagesRepo');
 const { publishOutbound } = require('./outbox');
+const { applyToLedger } = require('./db/ledgerRepo');
 const { startConsuming } = require('./consumer');
 
 function buildFakeChannel() {
@@ -35,6 +37,7 @@ describe('startConsuming (consumer.js, adaptador delgado)', () => {
 
     beforeEach(async () => {
         jest.clearAllMocks();
+        applyToLedger.mockResolvedValue({ result: 'applied' });
         channel = buildFakeChannel();
         const connection = { createChannel: jest.fn().mockResolvedValue(channel) };
         await startConsuming(connection);
@@ -87,5 +90,28 @@ describe('startConsuming (consumer.js, adaptador delgado)', () => {
 
         expect(insertRejected).not.toHaveBeenCalled();
         expect(channel.ack).toHaveBeenCalledWith(msg);
+    });
+
+    test('mensaje aceptado se aplica al ledger antes del ack AMQP (U4/U7)', async () => {
+        const body = {
+            idpk: randomUUID(), msgId: randomUUID(), type: 'transfer', timestamp: new Date().toISOString(),
+            sender: 'central', cycleId: 'cycle-9431', data: { quantity: 508145 },
+        };
+        const msg = buildFakeMsg(body);
+        await consumeCallback(msg);
+
+        expect(applyToLedger).toHaveBeenCalledWith(body);
+        expect(applyToLedger.mock.invocationCallOrder[0]).toBeLessThan(channel.ack.mock.invocationCallOrder[0]);
+    });
+
+    test('si falla la DB al aplicar al ledger, no hay ack AMQP (RabbitMQ lo reentrega)', async () => {
+        applyToLedger.mockRejectedValue(new Error('db caida'));
+        const msg = buildFakeMsg({
+            idpk: randomUUID(), msgId: randomUUID(), type: 'transfer', timestamp: new Date().toISOString(),
+            sender: 'central', cycleId: 'cycle-9431', data: { quantity: 1 },
+        });
+        await consumeCallback(msg);
+
+        expect(channel.ack).not.toHaveBeenCalled();
     });
 });

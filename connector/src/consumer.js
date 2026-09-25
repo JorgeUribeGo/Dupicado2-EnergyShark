@@ -3,6 +3,7 @@ const config = require('./config');
 const { validateEnvelope } = require('./protocol/envelope');
 const { insertRejected } = require('./db/rejectedMessagesRepo');
 const { publishOutbound } = require('./outbox');
+const { applyToLedger } = require('./db/ledgerRepo');
 
 async function handleNack(channel, msg, routingKey, nackResult) {
     console.warn(`[nack] routingKey=${routingKey} reason=${nackResult.reason}`);
@@ -73,7 +74,18 @@ async function startConsuming(connection) {
         // enunciado describe esa verificación como algo que LA CENTRAL hace sobre lo que
         // nosotros publicamos, no algo que nosotros hagamos al consumir — ver ADR-001.
         console.log(`[aceptado] routingKey=${routingKey} type=${result.envelope.type} msgId=${result.envelope.msgId}`);
-        // TODO(U2/U4/U6/U7/U8): ACK real (vía outbox) + aplicar el envelope al ledger.
+        // U4/U7: status-statement, transfer y demand-statement se aplican al ledger antes del
+        // ack AMQP (ADR-001). Si la DB falla, no se hace ack: el mensaje queda sin confirmar y
+        // RabbitMQ lo reentrega al reconectar. ponytail: un mensaje que falle siempre ocupa un
+        // slot de prefetch hasta reconectar; U2 puede decidir una política mejor.
+        try {
+            const applied = await applyToLedger(result.envelope);
+            if (applied.result !== 'ignored') console.log(`[ledger] ${applied.result} type=${result.envelope.type} idpk=${result.envelope.idpk}`);
+        } catch (err) {
+            console.error(`[ledger] error aplicando msgId=${result.envelope.msgId}: ${err.message}`);
+            return;
+        }
+        // TODO(U2/U6/U8): ACK real (vía outbox) + resto de tipos.
         channel.ack(msg);
         fs.writeFileSync('/tmp/healthy', '');
     }, { noAck: false });
