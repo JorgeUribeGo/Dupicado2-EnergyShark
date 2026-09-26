@@ -8,15 +8,16 @@
     { "if": { "properties": { "reason": { "const": "CYCLE_UNKNOWN" } } }, "then": { "properties": { "code": { "const": 404 } } } },
     { "if": { "properties": { "reason": { "const": "CYCLE_EXPIRED" } } }, "then": { "properties": { "code": { "const": 410 } } } },
     { "if": { "properties": { "reason": { "const": "PRICE_ABOVE_CAP" } } }, "then": { "properties": { "code": { "const": 422 } }, "required": ["data"], "properties": { "data": { "required": ["cap"] } } } },
-    { "if": { "properties": { "reason": { "const": "OVER_CAPACITY" } } }, "then": { "properties": { "code": { "const": 409 } }, "required": ["data"], "properties": { "data": { "required": ["spare"] } } } }
+    { "if": { "properties": { "reason": { "const": "OVER_CAPACITY" } } }, "then": { "properties": { "code": { "const": 409 } }, "required": ["data"], "properties": { "data": { "required": ["spare"] } } } },
+    { "if": { "properties": { "reason": { "const": "REPORT_TOO_EARLY" } } }, "then": { "$comment": "El enunciado da 425 en la tabla de errores y 422 en 'Sobre reportar a la central': se aceptan ambos y el connector decide por reason, no por code. opensAt no se exige: sin él se reintenta en el tick siguiente (perder este error cuesta la multa del reporte).", "properties": { "code": { "enum": [425, 422] } } } }
   ],
   "type": "object",
   "properties": {
     "type": { "const": "error" },
     "sender": { "const": "central" },
     "cycleId": { "type": "string" },
-    "reason": { "type": "string", "enum": ["CYCLE_UNKNOWN", "CYCLE_EXPIRED", "PRICE_ABOVE_CAP", "OVER_CAPACITY"] },
-    "code": { "type": "integer", "enum": [404, 409, 410, 422] },
+    "reason": { "type": "string", "enum": ["CYCLE_UNKNOWN", "CYCLE_EXPIRED", "PRICE_ABOVE_CAP", "OVER_CAPACITY", "REPORT_TOO_EARLY"] },
+    "code": { "type": "integer", "enum": [404, 409, 410, 422, 425] },
     "data": {
       "type": "object",
       "required": ["target", "message"],
@@ -24,7 +25,8 @@
         "target": { "type": "string", "format": "uuid", "description": "msgId del mensaje que causó el error." },
         "message": { "type": "string" },
         "cap": { "type": "number", "description": "Solo en PRICE_ABOVE_CAP: round2(1.05*generationCost)." },
-        "spare": { "type": "number", "description": "Solo en OVER_CAPACITY: energía vendible restante." }
+        "spare": { "type": "number", "description": "Solo en OVER_CAPACITY: energía vendible restante." },
+        "opensAt": { "type": "string", "format": "date-time", "description": "Solo en REPORT_TOO_EARLY: instante ISO-8601 desde el cual se acepta el negotiation-report. Reintentar en ese instante, no de inmediato." }
       }
     }
   },
