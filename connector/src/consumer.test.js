@@ -52,6 +52,7 @@ const statusStatement = () => fromCentral('status-statement', {
 
 describe('startConsuming (consumer.js)', () => {
     let channel;
+    let connection;
     let consumeCallback;
 
     beforeEach(async () => {
@@ -59,7 +60,7 @@ describe('startConsuming (consumer.js)', () => {
         applyToLedger.mockResolvedValue({ result: 'applied' });
         withTransaction.mockImplementation((fn) => fn(txClient));
         channel = buildFakeChannel();
-        const connection = { createChannel: jest.fn().mockResolvedValue(channel) };
+        connection = { createChannel: jest.fn().mockResolvedValue(channel), close: jest.fn().mockResolvedValue(undefined) };
         await startConsuming(connection);
         // No se declara/verifica topología: solo prefetch + consume sobre la cola ya existente.
         expect(channel.consume).toHaveBeenCalledWith('city.TEST.q', expect.any(Function), { noAck: false });
@@ -206,15 +207,45 @@ describe('startConsuming (consumer.js)', () => {
             expect(health.setConsuming).toHaveBeenLastCalledWith(false);
         });
 
-        test('si el broker cancela el consumo (mensaje null), deja de estar sano', async () => {
+        test('si el broker cancela el consumo (mensaje null), deja de estar sano y fuerza la reconexión', async () => {
             await consumeCallback(null);
             expect(health.setConsuming).toHaveBeenLastCalledWith(false);
             expect(channel.ack).not.toHaveBeenCalled();
+            expect(connection.close).toHaveBeenCalled();
+        });
+
+        test('si el broker cierra el canal de consumo con la conexión arriba, fuerza la reconexión', () => {
+            jest.spyOn(console, 'error').mockImplementation(() => {});
+            channel.emit('error', new Error('Channel closed by server: 406 (PRECONDITION-FAILED)'));
+            channel.emit('close');
+
+            expect(connection.close).toHaveBeenCalledTimes(1);
+            expect(health.setConsuming).toHaveBeenLastCalledWith(false);
+            console.error.mockRestore();
+        });
+
+        test('un corte de conexión (close sin error) no fuerza nada: la reconexión es de connection.js', () => {
+            channel.emit('close');
+            expect(connection.close).not.toHaveBeenCalled();
+        });
+
+        test('un error del canal antes de quedar activo lo maneja connection.js (el await de consume falla)', async () => {
+            jest.spyOn(console, 'error').mockImplementation(() => {});
+            const failing = buildFakeChannel();
+            failing.consume.mockImplementation(async () => {
+                failing.emit('error', new Error('404 NOT_FOUND - no queue'));
+                throw new Error('404 NOT_FOUND - no queue');
+            });
+            const conn = { createChannel: jest.fn().mockResolvedValue(failing), close: jest.fn().mockResolvedValue(undefined) };
+
+            await expect(startConsuming(conn)).rejects.toThrow('404');
+            expect(conn.close).not.toHaveBeenCalled();
+            console.error.mockRestore();
         });
 
         test('tras reconectar, el close tardío del canal anterior no apaga la salud del nuevo', async () => {
             const newChannel = buildFakeChannel();
-            await startConsuming({ createChannel: jest.fn().mockResolvedValue(newChannel) });
+            await startConsuming({ createChannel: jest.fn().mockResolvedValue(newChannel), close: jest.fn() });
             health.setConsuming.mockClear();
 
             channel.emit('close'); // el canal viejo

@@ -102,6 +102,20 @@ async function startConsuming(connection) {
     // Al cerrarse la conexión (corte de broker), amqplib cierra también cada canal.
     channel.on('close', () => stopConsuming('canal cerrado'));
 
+    // Con la conexión arriba nada reconecta solo: si el broker cierra el canal de consumo o cancela
+    // el consumer, se cierra la conexión a propósito y connection.js reconecta y vuelve a suscribir
+    // (con su espera creciente si, p. ej., la cola sigue sin existir). ADR-001, addendum de reconexión.
+    const forceReconnect = (reason) => {
+        if (activeChannel !== channel) return;
+        stopConsuming(`${reason}; se fuerza la reconexión`);
+        connection.close().catch(() => {});
+    };
+    // Antes de estar activo, un error lo recibe el await de prefetch/consume y lo maneja connection.js.
+    channel.on('error', (err) => {
+        console.error(`[consumer] el broker cerró el canal de consumo: ${err.message}`);
+        forceReconnect('canal de consumo cerrado por el broker');
+    });
+
     // No declarar/verificar topología (assertQueue, etc.): las credenciales de la ciudad
     // no tienen permiso para modificarla y una declaración normal cierra el canal.
     await channel.prefetch(8);
@@ -109,7 +123,7 @@ async function startConsuming(connection) {
     await channel.consume(queue, async (msg) => {
         // null: el broker canceló el consumo (p. ej. la cola fue borrada).
         if (!msg) {
-            stopConsuming('el broker canceló el consumo');
+            forceReconnect('el broker canceló el consumo');
             return;
         }
 
