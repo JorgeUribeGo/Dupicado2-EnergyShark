@@ -2,6 +2,7 @@ const config = require('./config');
 const { connectWithRetry } = require('./connection');
 const { startConsuming } = require('./consumer');
 const outbox = require('./outbox');
+const scheduler = require('./scheduler');
 
 // Sin exchange no hay a dónde publicar ack/nack/reportes: mejor caer con un mensaje claro que
 // consumir y dejar todas las respuestas pending para siempre (G02).
@@ -18,6 +19,9 @@ async function onConnected(connection) {
 // El publicador corre desde el arranque, haya broker o no: lo decidido mientras el broker está
 // caído queda pending en outbox_messages y sale apenas vuelve la conexión (ADR-001).
 outbox.start();
+// El scheduler tampoco depende del broker: un reporte que vence con el broker caído queda en el
+// outbox y sale al reconectar.
+scheduler.start();
 
 connectWithRetry(onConnected).catch((err) => {
     console.error('Error al iniciar el consumidor:', err.message);

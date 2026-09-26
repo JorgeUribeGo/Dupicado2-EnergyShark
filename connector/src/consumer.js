@@ -6,6 +6,7 @@ const { insertRejected } = require('./db/rejectedMessagesRepo');
 const { applyToLedger } = require('./db/ledgerRepo');
 const { withTransaction } = require('./db/transaction');
 const { enqueueAck, enqueueNack } = require('./outbox');
+const { handleReportError } = require('./reports');
 
 async function handleDiscard(routingKey, result) {
     console.warn(`[descartado] routingKey=${routingKey} reason=${result.reason}`);
@@ -63,6 +64,13 @@ async function handleAccepted(routingKey, env) {
         // re-aplica, pero se responde igual que la primera vez (ADR-002).
         const applied = await applyToLedger(env, client);
         if (applied.result !== 'ignored') console.log(`[ledger] ${applied.result} type=${env.type} idpk=${env.idpk}`);
+
+        // Rechazos de la central a algo que publicamos: quedan en el log (anomalía #5). U5 actúa
+        // sobre REPORT_TOO_EARLY; los de propuestas (PRICE_ABOVE_CAP, OVER_CAPACITY) son de U6.
+        if (env.type === 'nack' || env.type === 'error') {
+            console.warn(`[central] ${env.type} reason=${env.reason} code=${env.code} target=${env.data.target}: ${env.data.message}`);
+        }
+        if (env.type === 'error') await handleReportError(client, env);
 
         if (!isResponseType(env.type)) await enqueueAck(client, env.msgId);
     });

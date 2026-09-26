@@ -10,12 +10,14 @@ jest.mock('./db/rejectedMessagesRepo', () => ({ insertRejected: jest.fn() }));
 jest.mock('./db/ledgerRepo', () => ({ applyToLedger: jest.fn() }));
 jest.mock('./db/transaction', () => ({ withTransaction: jest.fn() }));
 jest.mock('./outbox', () => ({ enqueueAck: jest.fn(), enqueueNack: jest.fn() }));
+jest.mock('./reports', () => ({ handleReportError: jest.fn() }));
 jest.mock('fs');
 
 const { insertRejected } = require('./db/rejectedMessagesRepo');
 const { applyToLedger } = require('./db/ledgerRepo');
 const { withTransaction } = require('./db/transaction');
 const { enqueueAck, enqueueNack } = require('./outbox');
+const { handleReportError } = require('./reports');
 const { startConsuming } = require('./consumer');
 
 // Un "client" de transacción reconocible, para verificar que todo se escribe con el mismo.
@@ -133,6 +135,22 @@ describe('startConsuming (consumer.js)', () => {
         expect(enqueueAck).not.toHaveBeenCalled();
         expect(enqueueNack).not.toHaveBeenCalled();
         expect(channel.ack).toHaveBeenCalledWith(msg);
+    });
+
+    test('REPORT_TOO_EARLY de la central: se reprograma el reporte en la misma transacción, sin ack de protocolo', async () => {
+        applyToLedger.mockResolvedValue({ result: 'ignored' });
+        const body = fromCentral('error', { target: randomUUID(), message: 'too early', opensAt: now() }, {
+            reason: 'REPORT_TOO_EARLY', code: 425, cycleId: 'cycle-1',
+        });
+        await consumeCallback(buildFakeMsg(body));
+
+        expect(handleReportError).toHaveBeenCalledWith(txClient, body);
+        expect(enqueueAck).not.toHaveBeenCalled();
+    });
+
+    test('un tipo que no es error no pasa por el manejo de errores de reportes', async () => {
+        await consumeCallback(buildFakeMsg(statusStatement()));
+        expect(handleReportError).not.toHaveBeenCalled();
     });
 
     describe('si falla la DB', () => {
