@@ -1,4 +1,7 @@
 **/node_modules
 .git
-*.env
-*.pem
+# Con **/ también se excluyen los de subcarpetas: el connector se construye con la raíz del repo como
+# contexto y `*.env` solo excluía el .env de la raíz, así connector/.env (credenciales del broker)
+# terminaba dentro de la imagen. Las variables llegan en runtime por env_file (docker-compose.yml).
+**/*.env
+**/*.pem
