@@ -42,6 +42,9 @@ un mensaje**. Como la central escribe cada ~2 h (al abrir cada ventana), el cont
 
 ## Fuera de alcance
 
-- Si el broker cancela el consumo o se cierra solo el canal de consumo (con la conexión arriba), el
-  nodo no vuelve a suscribirse solo. Ahora eso al menos se ve como `unhealthy`; recuperarse
-  automáticamente requeriría reabrir el canal o forzar la reconexión.
+- ~~Si el broker cancela el consumo o se cierra solo el canal de consumo (con la conexión arriba), el
+  nodo no vuelve a suscribirse solo.~~ **Corrección (misma fecha):** esto era impreciso. Si el broker
+  cierra el canal de consumo, sí había recuperación, aunque accidental (el `'error'` del canal sin
+  listener hacía que amqplib cerrara toda la conexión y `connection.js` reconectaba). La que no se
+  recuperaba era la cancelación del consumer (`basic.cancel`). Ambas quedan explícitas en
+  `fix/reconexion-amqp` (ver `2026-09-26-david-fix-reconexion-anomalias.md`).
