@@ -1,5 +1,6 @@
 const pool = require('./pool');
 const { insertRejected } = require('./rejectedMessagesRepo');
+const { withTransaction } = require('./transaction');
 
 // Ventana de negociación (enunciado §Sobre el presupuesto) y periodo de cierre (ADR-002, addendum).
 const WINDOW_MINUTES = 20;
@@ -8,22 +9,6 @@ const REPORT_LEAD_MINUTES = 5;
 // Serializa las escrituras al ledger: con prefetch(8) dos handlers concurrentes leerían el mismo
 // saldo anterior. ponytail: lock global, basta a decenas de eventos por ciclo.
 const LEDGER_LOCK_KEY = 2173;
-
-async function inTransaction(fn) {
-    const client = await pool.connect();
-    try {
-        await client.query('BEGIN');
-        await client.query('SELECT pg_advisory_xact_lock($1)', [LEDGER_LOCK_KEY]);
-        const result = await fn(client);
-        await client.query('COMMIT');
-        return result;
-    } catch (err) {
-        await client.query('ROLLBACK');
-        throw err;
-    } finally {
-        client.release();
-    }
-}
 
 // El ciclo puede nombrarse antes de que llegue su status-statement (ADR-002, addendum §1).
 async function ensureCycle(client, cycleId) {
@@ -105,11 +90,15 @@ const APPLIERS = {
 };
 
 // Punto de entrada desde consumer.js para un envelope ya validado. Tipos que no tocan el ledger
-// (u otras unidades aún no implementadas) devuelven 'ignored' sin abrir transacción.
-async function applyToLedger(env) {
+// (u otras unidades aún no implementadas) devuelven 'ignored' sin tocar la DB.
+// client: la transacción del consumer, para que el ack quede en el outbox junto con el evento
+// (ADR-001, addendum U2). Sin client abre una transacción propia.
+async function applyToLedger(env, client) {
     const apply = APPLIERS[env.type];
     if (!apply) return { result: 'ignored' };
-    return inTransaction((client) => apply(client, env));
+    if (!client) return withTransaction((tx) => applyToLedger(env, tx));
+    await client.query('SELECT pg_advisory_xact_lock($1)', [LEDGER_LOCK_KEY]);
+    return apply(client, env);
 }
 
 // Para el negotiation-report (U5): budget global actual y balance energético del ciclo =
