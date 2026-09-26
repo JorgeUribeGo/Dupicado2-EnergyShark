@@ -1,5 +1,5 @@
-const fs = require('fs');
 const config = require('./config');
+const health = require('./health');
 const { validateEnvelope } = require('./protocol/envelope');
 const { isResponseType } = require('./protocol/responses');
 const { insertRejected } = require('./db/rejectedMessagesRepo');
@@ -85,18 +85,33 @@ async function processMessage(content, routingKey) {
     return handleAccepted(routingKey, result.envelope);
 }
 
+let activeChannel = null;
+
 async function startConsuming(connection) {
     const channel = await connection.createChannel();
     const queue = config.rabbitmq.queue;
+
+    // Solo el canal vigente puede marcar que se dejó de consumir: tras una reconexión, un close
+    // tardío del canal anterior no debe apagar la salud del nuevo.
+    const stopConsuming = (reason) => {
+        if (activeChannel !== channel) return;
+        activeChannel = null;
+        health.setConsuming(false);
+        console.warn(`[consumer] se dejó de consumir ${queue}: ${reason}`);
+    };
+    // Al cerrarse la conexión (corte de broker), amqplib cierra también cada canal.
+    channel.on('close', () => stopConsuming('canal cerrado'));
 
     // No declarar/verificar topología (assertQueue, etc.): las credenciales de la ciudad
     // no tienen permiso para modificarla y una declaración normal cierra el canal.
     await channel.prefetch(8);
 
-    console.log(`[*] Consumiendo mensajes de la cola: ${queue}`);
-
-    channel.consume(queue, async (msg) => {
-        if (!msg) return;
+    await channel.consume(queue, async (msg) => {
+        // null: el broker canceló el consumo (p. ej. la cola fue borrada).
+        if (!msg) {
+            stopConsuming('el broker canceló el consumo');
+            return;
+        }
 
         // La misma cola recibe el routing key propio (dirigido) y city.broadcast (difusión
         // a todas las ciudades) — se registra cuál fue, no cambia ninguna regla de validación.
@@ -123,8 +138,13 @@ async function startConsuming(connection) {
         // Ack AMQP recién después del COMMIT (ADR-001). Un descarte también se confirma, para no
         // bloquear la cola con basura irrecuperable.
         channel.ack(msg);
-        fs.writeFileSync('/tmp/healthy', '');
     }, { noAck: false });
+
+    // Sano recién cuando el broker confirmó el consumer (ADR-001: el healthcheck refleja la
+    // conexión AMQP, no la llegada de mensajes).
+    activeChannel = channel;
+    health.setConsuming(true);
+    console.log(`[*] Consumiendo mensajes de la cola: ${queue}`);
 }
 
 module.exports = { startConsuming, processMessage };

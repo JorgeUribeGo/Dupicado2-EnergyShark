@@ -1,3 +1,4 @@
+const { EventEmitter } = require('events');
 const { randomUUID } = require('crypto');
 
 jest.mock('./config', () => ({
@@ -11,25 +12,26 @@ jest.mock('./db/ledgerRepo', () => ({ applyToLedger: jest.fn() }));
 jest.mock('./db/transaction', () => ({ withTransaction: jest.fn() }));
 jest.mock('./outbox', () => ({ enqueueAck: jest.fn(), enqueueNack: jest.fn() }));
 jest.mock('./reports', () => ({ handleReportError: jest.fn() }));
-jest.mock('fs');
+jest.mock('./health', () => ({ setConsuming: jest.fn() }));
 
 const { insertRejected } = require('./db/rejectedMessagesRepo');
 const { applyToLedger } = require('./db/ledgerRepo');
 const { withTransaction } = require('./db/transaction');
 const { enqueueAck, enqueueNack } = require('./outbox');
 const { handleReportError } = require('./reports');
+const health = require('./health');
 const { startConsuming } = require('./consumer');
 
 // Un "client" de transacción reconocible, para verificar que todo se escribe con el mismo.
 const txClient = { tx: true };
 
 function buildFakeChannel() {
-    return {
+    return Object.assign(new EventEmitter(), {
         prefetch: jest.fn().mockResolvedValue(undefined),
-        consume: jest.fn(),
+        consume: jest.fn().mockResolvedValue({ consumerTag: 'tag' }),
         ack: jest.fn(),
         nack: jest.fn(),
-    };
+    });
 }
 
 function buildFakeMsg(body, { routingKey = 'city.TEST' } = {}) {
@@ -184,6 +186,42 @@ describe('startConsuming (consumer.js)', () => {
             await consumeCallback(buildFakeMsg(fromCentral('transfer', { quantity: 1 }, { cycleId: 'cycle-1' })));
 
             expect(() => jest.advanceTimersByTime(5000)).not.toThrow();
+        });
+    });
+
+    describe('salud (healthcheck = consumiendo la cola, ADR-001)', () => {
+        test('queda sano recién cuando el broker confirmó el consumer', () => {
+            expect(health.setConsuming).toHaveBeenCalledWith(true);
+            expect(health.setConsuming.mock.invocationCallOrder[0]).toBeGreaterThan(channel.consume.mock.invocationCallOrder[0]);
+        });
+
+        test('procesar mensajes no toca la salud: la mantiene el latido, no el tráfico', async () => {
+            health.setConsuming.mockClear();
+            await consumeCallback(buildFakeMsg(statusStatement()));
+            expect(health.setConsuming).not.toHaveBeenCalled();
+        });
+
+        test('si se cierra el canal (p. ej. corte de broker), deja de estar sano', () => {
+            channel.emit('close');
+            expect(health.setConsuming).toHaveBeenLastCalledWith(false);
+        });
+
+        test('si el broker cancela el consumo (mensaje null), deja de estar sano', async () => {
+            await consumeCallback(null);
+            expect(health.setConsuming).toHaveBeenLastCalledWith(false);
+            expect(channel.ack).not.toHaveBeenCalled();
+        });
+
+        test('tras reconectar, el close tardío del canal anterior no apaga la salud del nuevo', async () => {
+            const newChannel = buildFakeChannel();
+            await startConsuming({ createChannel: jest.fn().mockResolvedValue(newChannel) });
+            health.setConsuming.mockClear();
+
+            channel.emit('close'); // el canal viejo
+            expect(health.setConsuming).not.toHaveBeenCalled();
+
+            newChannel.emit('close');
+            expect(health.setConsuming).toHaveBeenCalledWith(false);
         });
     });
 });
