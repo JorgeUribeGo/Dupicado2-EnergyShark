@@ -222,3 +222,13 @@ addendum de U10 dejaban abierto, y corrige dos puntos del flujo (7 y 11).
     con `FOR UPDATE SKIP LOCKED`, en una transacción por operación. Los handlers que escriben al
     ledger toman primero el lock del ledger (ADR-002, addendum §4) y después la fila de la operación.
     El sweeper nunca toma el del ledger, así que no hay ciclos de espera.
+
+**Nota posterior a la implementación de U6 (2026-09-27, David).** Dos hallazgos al probar:
+- El SQL de este ADR declaraba `status VARCHAR(20)`, pero `'awaiting_confirmation'` (su propio
+  valor por defecto) tiene 21 caracteres. La primera propuesta publicada fallaba con `value too long`.
+  No se había notado porque U10 solo inserta `requested`. La migración de U6 amplía la columna a
+  `VARCHAR(30)`.
+- Tras un reinicio, el primer tick del sweeper corre antes de que el broker reentregue lo que quedó
+  sin `ack`. Una operación cuya confirmación ya estaba en la cola se reenvía una vez de más (mismo
+  `idpk`). Es inofensivo por diseño: la confirmación reentregada liquida la operación y la del
+  reenvío queda como `duplicate` sin pagar de nuevo (verificado de punta a punta con `kill -9`).
