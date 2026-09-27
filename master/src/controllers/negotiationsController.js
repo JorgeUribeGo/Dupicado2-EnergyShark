@@ -11,6 +11,7 @@ const NEGOTIATION_STATUS = {
     awaiting_payment: 'confirmed',
     settled: 'paid',
     abandoned: 'expired',
+    rejected: 'rejected',
 };
 const INTERNAL_STATUSES = (status) => Object.keys(NEGOTIATION_STATUS).filter((k) => NEGOTIATION_STATUS[k] === status);
 const PUBLIC_STATUSES = ['proposed', 'confirmed', 'paid', 'expired', 'rejected'];
@@ -23,11 +24,16 @@ function toNegotiation(op) {
         direction: op.direction,
         quantity: num(op.quantity),
         pricePerEnergy: num(op.pricePerEnergy),
-        settledPricePerEnergy: null, // TODO(U6): no se persiste aún en pending_operations
+        // Precio al que liquidó la central, de su confirmación give/take (U6).
+        settledPricePerEnergy: op.confirmation ? num(op.confirmation.data.pricePerEnergy) : null,
         status: NEGOTIATION_STATUS[op.status] || op.status,
         proposedAt: op.createdAt,
-        confirmedAt: null,
-        paidAt: null,
+        confirmedAt: op.confirmedAt || null,
+        paidAt: op.paidAt || null,
+        origin: op.origin,
+        attempts: op.attempts,
+        failureReason: op.failureReason || null,
+        failureDetail: op.failureDetail || null,
     };
 }
 

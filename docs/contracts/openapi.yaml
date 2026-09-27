@@ -103,6 +103,10 @@ components:
         proposedAt: { type: string, format: date-time }
         confirmedAt: { type: string, format: date-time, nullable: true }
         paidAt: { type: string, format: date-time, nullable: true }
+        origin: { type: string, enum: [auto, manual], description: "auto: la propuso el connector al abrir la ventana (U6); manual: creada con POST /api/negotiations." }
+        attempts: { type: integer, description: "Envíos de la propuesta (mismo idpk), tope 5 (ADR-003)." }
+        failureReason: { type: string, nullable: true, description: "En rejected/expired: reason de la central (PRICE_ABOVE_CAP, OVER_CAPACITY, CYCLE_EXPIRED, ...) o propio (TIMEOUT, WINDOW_CLOSED, NO_STATUS_STATEMENT)." }
+        failureDetail: { type: string, nullable: true }
 
     DistanceTable:
       type: object
@@ -219,8 +223,9 @@ paths:
       summary: Crear una propuesta de negociación manual (RF04)
       description: >
         Registra la propuesta (status interno 'requested', expuesto como 'proposed'); el connector
-        la publica en el siguiente tick de su sweeper (ADR-003, addendum U10). El tope de precio y
-        la capacidad los valida la central.
+        la publica en el siguiente tick de su sweeper (ADR-003, addendum U10). El connector valida
+        el tope de precio y la capacidad antes de publicarla: si no pasan, la negociación queda
+        'rejected' con su failureReason, sin enviarse (ADR-003, addendum U6).
       requestBody:
         required: true
         content:

@@ -64,7 +64,7 @@ run('ledgerRepo (integración con Postgres)', () => {
         expect(await rejected()).toEqual([expect.objectContaining({ kind: 'duplicate', msg_type: 'transfer', idpk: t.idpk })]);
     });
 
-    test('transfer con becauseOf (pago de negociación) se deja para U6', async () => {
+    test('transfer con becauseOf (pago de negociación) no lo aplica ledgerRepo: lo aplica negotiation.js (U6)', async () => {
         const res = await applyToLedger(transfer('cycle-1', 100, { becauseOf: randomUUID() }));
         expect(res.result).toBe('ignored');
         expect(await events()).toHaveLength(0);

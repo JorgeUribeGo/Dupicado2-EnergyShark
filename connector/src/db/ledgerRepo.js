@@ -31,8 +31,9 @@ async function recordDuplicate(client, env) {
 // Aritmética en NUMERIC de Postgres, no en floats de JS. delta_budget = budgetFactorA * budgetFactorB
 // para que demand-statement (quantity * valuePerKwh) no pase por una multiplicación en JS.
 // resulting_budget es acumulado global; resulting_energy, acumulado dentro del ciclo (ADR-002, addendum §3).
-async function insertEvent(client, env, { budgetFactorA, budgetFactorB = 1, deltaEnergy = 0 }) {
-    await ensureCycle(client, env.cycleId);
+// event: { cycleId, type, idpk, msgId } y el payload que queda para auditoría. null si el idpk ya estaba.
+async function insertRow(client, event, payload, { budgetFactorA, budgetFactorB = 1, deltaEnergy = 0 }) {
+    await ensureCycle(client, event.cycleId);
     const { rows } = await client.query(
         `INSERT INTO ledger_events
             (cycle_id, type, idpk, msg_id, payload, delta_budget, delta_energy, resulting_budget, resulting_energy)
@@ -43,10 +44,15 @@ async function insertEvent(client, env, { budgetFactorA, budgetFactorB = 1, delt
                 COALESCE((SELECT resulting_energy FROM ledger_events WHERE cycle_id = $1::varchar ORDER BY id DESC LIMIT 1), 0) + $8::numeric
          ON CONFLICT (idpk) DO NOTHING
          RETURNING id`,
-        [env.cycleId, env.type, env.idpk, env.msgId, env, budgetFactorA, budgetFactorB, deltaEnergy],
+        [event.cycleId, event.type, event.idpk, event.msgId, payload, budgetFactorA, budgetFactorB, deltaEnergy],
     );
-    if (rows.length === 0) return recordDuplicate(client, env);
-    return { result: 'applied', eventId: rows[0].id };
+    return rows.length ? rows[0].id : null;
+}
+
+async function insertEvent(client, env, factors) {
+    const eventId = await insertRow(client, env, env, factors);
+    if (eventId === null) return recordDuplicate(client, env);
+    return { result: 'applied', eventId };
 }
 
 // No genera fila en ledger_events: fija el estado del ciclo (ADR-002). Un status-statement con idpk
@@ -71,7 +77,8 @@ async function applyStatusStatement(client, env) {
 }
 
 // Solo los fondos del ciclo (sin becauseOf). Los pagos de negociación (con becauseOf) los aplica
-// U6 con el idpk de pending_operations (ADR-003 paso 4) — aplicarlos aquí también los duplicaría.
+// negotiation.js (U6) con el idpk de pending_operations (ADR-003 paso 4) — aplicarlos aquí también
+// los duplicaría.
 // quantity ya viene neta de la multa por no reportar; penalty queda en payload.
 function applyTransfer(client, env) {
     if (env.data.becauseOf) return { result: 'ignored', detail: 'pago de negociación, lo aplica U6' };
@@ -99,8 +106,22 @@ async function applyToLedger(env, client) {
     const apply = APPLIERS[env.type];
     if (!apply) return { result: 'ignored' };
     if (!client) return withTransaction((tx) => applyToLedger(env, tx));
-    await client.query('SELECT pg_advisory_xact_lock($1)', [LEDGER_LOCK_KEY]);
+    await lockLedger(client);
     return apply(client, env);
+}
+
+// Hasta el COMMIT. Reentrante: tomarlo dos veces en la misma transacción no bloquea.
+async function lockLedger(client) {
+    await client.query('SELECT pg_advisory_xact_lock($1)', [LEDGER_LOCK_KEY]);
+}
+
+// Liquidación de una negociación voluntaria (U6): evento give | take con el idpk de la operación en
+// pending_operations (ADR-003 paso 4), no el del mensaje que la dispara, así un reintento cruzado
+// choca con UNIQUE(idpk). deltaBudget y deltaEnergy como string NUMERIC. false si ya estaba aplicada.
+async function applyNegotiationEvent(client, { cycleId, type, idpk, msgId, payload, deltaBudget, deltaEnergy }) {
+    await lockLedger(client);
+    const eventId = await insertRow(client, { cycleId, type, idpk, msgId }, payload, { budgetFactorA: deltaBudget, deltaEnergy });
+    return eventId !== null;
 }
 
 // Para el negotiation-report (U5): budget global actual y balance energético del ciclo =
@@ -119,4 +140,4 @@ async function getCycleBalances(cycleId, db = pool) {
     return { budgetBalance: Number(rows[0].budget), energyBalance: Number(rows[0].energy) };
 }
 
-module.exports = { applyToLedger, getCycleBalances };
+module.exports = { applyToLedger, applyNegotiationEvent, lockLedger, getCycleBalances };

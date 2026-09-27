@@ -3,6 +3,7 @@ const { connectWithRetry } = require('./connection');
 const { startConsuming } = require('./consumer');
 const outbox = require('./outbox');
 const scheduler = require('./scheduler');
+const negotiation = require('./negotiation');
 const health = require('./health');
 
 // Sin exchange no hay a dónde publicar ack/nack/reportes: mejor caer con un mensaje claro que
@@ -23,6 +24,9 @@ outbox.start();
 // El scheduler tampoco depende del broker: un reporte que vence con el broker caído queda en el
 // outbox y sale al reconectar.
 scheduler.start();
+// Sweeper de pending_operations (ADR-003): publica las propuestas pedidas y reintenta o abandona las
+// vencidas. Todo su estado está en la DB, así que tras un reinicio retoma donde quedó.
+negotiation.start();
 // Latido del healthcheck: mantiene /tmp/healthy al día mientras se consume la cola.
 health.start();
 
