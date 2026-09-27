@@ -1,5 +1,11 @@
 require('dotenv').config();
 
+// Solo para pruebas locales: divide todas las duraciones del protocolo (con 60, un minuto del
+// protocolo dura un segundo). Nunca en producción: ahí las ventanas reales las fija la central.
+const timeScale = Number(process.env.CYCLE_TIME_SCALE) || 1;
+const MINUTE_MS = 60 * 1000;
+const scaled = (ms) => ms / timeScale;
+
 module.exports = {
     rabbitmq: {
         username: process.env.RABBITMQ_USERNAME,
@@ -42,5 +48,15 @@ module.exports = {
         batchSize: 50,
         // Espera antes de reabrir el canal de publicación si el broker lo cerró (p. ej. exchange inexistente).
         channelRetryMs: 5000,
+    },
+    // Duraciones del ciclo (enunciado §Sobre el presupuesto y §Sobre reportar a la central).
+    cycle: {
+        timeScale,
+        negotiationWindowMs: scaled(20 * MINUTE_MS),
+        reportLeadMs: scaled(5 * MINUTE_MS), // periodo de cierre: el reporte se acepta en los últimos 5 min
+        consumptionMs: scaled(120 * MINUTE_MS),
+    },
+    scheduler: {
+        tickMs: scaled(30 * 1000),
     },
 };

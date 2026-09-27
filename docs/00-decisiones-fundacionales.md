@@ -107,6 +107,48 @@ Razones:
    compartir el mismo intervalo de 30s o correr en intervalos propios; es una decisión de
    implementación, no arquitectónica.
 
+### Addendum — precisiones antes de implementar U5 (2026-09-26, David)
+
+Escrito **antes** del código de U5 (RDOC01). No cambia la decisión (estado en `cycles` + loop de
+30 s dentro de `connector`); fija lo que el texto de arriba dejaba abierto:
+
+1. **Cada loop, en su propio intervalo.** El outbox ya corre cada ~1 s (U2) y el sweeper de
+   `pending_operations` es de U6; el scheduler solo hace las dos tareas de ciclo. Dentro de un tick,
+   primero los reportes y después las transiciones de fase, para que un reporte que vence justo antes
+   del cierre salga en el mismo tick y no quede atrapado por la transición.
+2. **Cuándo se envía.** Periodo de cierre abierto: `phase = 'negotiating'` y
+   `report_due_at <= now < window_closes_at`. Un ciclo sin `status-statement` no tiene
+   `report_due_at` y nunca se reporta ("sólo deben reporte por un ciclo en el que la central les
+   habló"). Si el contenedor estuvo caído durante todo el periodo de cierre y vuelve después del
+   cierre, **no** se envía: sería un `CYCLE_EXPIRED` seguro ("reintentar después del cierre no les
+   compra nada").
+3. **Atómico y a prueba de caídas (anomalía #4).** Por ciclo, una transacción: `SELECT ... FOR
+   UPDATE` de la fila del ciclo, cálculo de balances (`getCycleBalances`, ADR-002), fila en
+   `outbox_messages` y `cycles.negotiation_report = envelope`. Si el proceso muere antes del
+   `COMMIT`, el siguiente tick lo rehace; si muere después, el outbox lo publica al volver.
+4. **Corrección vs. reenvío.** Mientras el periodo de cierre sigue abierto, cada tick recalcula los
+   balances. Si difieren del último reporte enviado (p. ej. llegó un `demand-statement`), se envía
+   una **corrección**: `idpk` **nuevo**, que reemplaza a la anterior para la central y en
+   `cycles.negotiation_report` (el historial completo queda en `outbox_messages`). Si no cambiaron,
+   no se envía nada. Un **reenvío** (mismo `idpk`) solo ocurre cuando el outbox republica la misma
+   fila; nunca mandamos contenido distinto con el mismo `idpk`, porque para la central "no cambia
+   nada" y nuestro reporte quedaría desactualizado.
+5. **`REPORT_TOO_EARLY`** (`error`, `code` 425, `data.opensAt`). Si `data.target` es el `msgId` del
+   reporte vigente del ciclo: `negotiation_report = NULL` y `report_due_at = data.opensAt`. El
+   scheduler lo reintenta cuando llega ese instante (no de inmediato), con `idpk` **nuevo** y balances
+   recalculados: el reporte rechazado "no queda guardado", así que no hay nada que reenviar, y un
+   `idpk` nuevo es correcto tanto si la central recuerda el `idpk` rechazado como si no. Un error que
+   apunta a un reporte ya reemplazado se ignora. Sin `opensAt` válido se reintenta en el tick
+   siguiente. Precisión: ±1 tick (30 s) sobre `opensAt`, frente a un periodo de cierre de 5 min.
+6. **Fases.** `negotiating → consuming` cuando `window_closes_at <= now` (con un warning en el log si
+   el ciclo cierra sin reporte: es la multa que viene, dato útil para la anomalía #5), y
+   `consuming → closed` cuando terminan las 2 h de consumo (`window_closes_at + 2 h <= now`).
+7. **Timers acelerados para probar (nunca esperar 2 h reales).** `CYCLE_TIME_SCALE` (por defecto 1)
+   divide todas las duraciones del protocolo que usa el nodo: ventana (20 min), periodo de cierre
+   (5 min), consumo (2 h) y el tick del scheduler (30 s). Con `CYCLE_TIME_SCALE=60`, un minuto del
+   protocolo dura un segundo. Solo para pruebas locales contra una "central" simulada: las ventanas
+   de los ciclos reales las fija el `validUntil` que manda la central.
+
 ---
 
 ## 4. Estrategia de generación de `idpk`

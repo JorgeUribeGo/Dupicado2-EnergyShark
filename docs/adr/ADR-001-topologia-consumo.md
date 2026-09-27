@@ -178,3 +178,22 @@ transaccional + loop de publicación); fija los detalles que el texto original d
    retardo (5 s), se devuelve a la cola con `basic.nack` + `requeue` (el `nack` de AMQP, no el NACK
    del protocolo): nada se pierde, y el retardo evita un loop caliente de reentregas mientras la DB
    no vuelva.
+
+### Addendum — reconexión revisada contra el código real (2026-09-26, David)
+
+Al revisar la reconexión de U1 frente a la propiedad de AD1 aparecieron tres huecos. La decisión
+(backoff 1 s → 30 s, indefinido) no cambia; cambia cómo se garantiza:
+
+1. **Un solo dueño de la conexión.** Cada conexión reconectaba desde su propio `close` y, además, el
+   `catch` reintentaba si la suscripción fallaba: una conexión que abría pero no lograba suscribirse
+   dejaba dos loops de reconexión en paralelo (dos conexiones, dos consumidores). Ahora un único loop
+   conecta, suscribe, espera el `close` y recién entonces reconecta; si la suscripción falla, cierra
+   esa conexión antes de reintentar.
+2. **Una conexión efímera no resetea la espera.** Antes, tras cada conexión exitosa se reconectaba al
+   instante: si el broker la cortaba apenas suscrita, eso era un loop de conexiones contra el broker
+   del curso (política de abuso). Ahora la espera vuelve a 1 s solo si la conexión duró al menos 30 s.
+3. **Recuperación explícita del canal de consumo.** Si el broker cierra el canal de consumo con la
+   conexión arriba, la reconexión ocurría por accidente (el `'error'` del canal sin listener hacía que
+   amqplib tirara la conexión entera; agregar un listener "solo para loguear" la habría roto). Si el
+   broker cancelaba el consumer (`basic.cancel`, p. ej. cola borrada), no se recuperaba nunca. En
+   ambos casos ahora se cierra la conexión a propósito y el loop reconecta y vuelve a suscribir.

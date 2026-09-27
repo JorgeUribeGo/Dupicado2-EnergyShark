@@ -1,3 +1,4 @@
+const { EventEmitter } = require('events');
 const { randomUUID } = require('crypto');
 
 jest.mock('./config', () => ({
@@ -10,24 +11,27 @@ jest.mock('./db/rejectedMessagesRepo', () => ({ insertRejected: jest.fn() }));
 jest.mock('./db/ledgerRepo', () => ({ applyToLedger: jest.fn() }));
 jest.mock('./db/transaction', () => ({ withTransaction: jest.fn() }));
 jest.mock('./outbox', () => ({ enqueueAck: jest.fn(), enqueueNack: jest.fn() }));
-jest.mock('fs');
+jest.mock('./reports', () => ({ handleReportError: jest.fn() }));
+jest.mock('./health', () => ({ setConsuming: jest.fn() }));
 
 const { insertRejected } = require('./db/rejectedMessagesRepo');
 const { applyToLedger } = require('./db/ledgerRepo');
 const { withTransaction } = require('./db/transaction');
 const { enqueueAck, enqueueNack } = require('./outbox');
+const { handleReportError } = require('./reports');
+const health = require('./health');
 const { startConsuming } = require('./consumer');
 
 // Un "client" de transacción reconocible, para verificar que todo se escribe con el mismo.
 const txClient = { tx: true };
 
 function buildFakeChannel() {
-    return {
+    return Object.assign(new EventEmitter(), {
         prefetch: jest.fn().mockResolvedValue(undefined),
-        consume: jest.fn(),
+        consume: jest.fn().mockResolvedValue({ consumerTag: 'tag' }),
         ack: jest.fn(),
         nack: jest.fn(),
-    };
+    });
 }
 
 function buildFakeMsg(body, { routingKey = 'city.TEST' } = {}) {
@@ -48,6 +52,7 @@ const statusStatement = () => fromCentral('status-statement', {
 
 describe('startConsuming (consumer.js)', () => {
     let channel;
+    let connection;
     let consumeCallback;
 
     beforeEach(async () => {
@@ -55,7 +60,7 @@ describe('startConsuming (consumer.js)', () => {
         applyToLedger.mockResolvedValue({ result: 'applied' });
         withTransaction.mockImplementation((fn) => fn(txClient));
         channel = buildFakeChannel();
-        const connection = { createChannel: jest.fn().mockResolvedValue(channel) };
+        connection = { createChannel: jest.fn().mockResolvedValue(channel), close: jest.fn().mockResolvedValue(undefined) };
         await startConsuming(connection);
         // No se declara/verifica topología: solo prefetch + consume sobre la cola ya existente.
         expect(channel.consume).toHaveBeenCalledWith('city.TEST.q', expect.any(Function), { noAck: false });
@@ -135,6 +140,22 @@ describe('startConsuming (consumer.js)', () => {
         expect(channel.ack).toHaveBeenCalledWith(msg);
     });
 
+    test('REPORT_TOO_EARLY de la central: se reprograma el reporte en la misma transacción, sin ack de protocolo', async () => {
+        applyToLedger.mockResolvedValue({ result: 'ignored' });
+        const body = fromCentral('error', { target: randomUUID(), message: 'too early', opensAt: now() }, {
+            reason: 'REPORT_TOO_EARLY', code: 425, cycleId: 'cycle-1',
+        });
+        await consumeCallback(buildFakeMsg(body));
+
+        expect(handleReportError).toHaveBeenCalledWith(txClient, body);
+        expect(enqueueAck).not.toHaveBeenCalled();
+    });
+
+    test('un tipo que no es error no pasa por el manejo de errores de reportes', async () => {
+        await consumeCallback(buildFakeMsg(statusStatement()));
+        expect(handleReportError).not.toHaveBeenCalled();
+    });
+
     describe('si falla la DB', () => {
         beforeEach(() => jest.useFakeTimers());
         afterEach(() => jest.useRealTimers());
@@ -166,6 +187,72 @@ describe('startConsuming (consumer.js)', () => {
             await consumeCallback(buildFakeMsg(fromCentral('transfer', { quantity: 1 }, { cycleId: 'cycle-1' })));
 
             expect(() => jest.advanceTimersByTime(5000)).not.toThrow();
+        });
+    });
+
+    describe('salud (healthcheck = consumiendo la cola, ADR-001)', () => {
+        test('queda sano recién cuando el broker confirmó el consumer', () => {
+            expect(health.setConsuming).toHaveBeenCalledWith(true);
+            expect(health.setConsuming.mock.invocationCallOrder[0]).toBeGreaterThan(channel.consume.mock.invocationCallOrder[0]);
+        });
+
+        test('procesar mensajes no toca la salud: la mantiene el latido, no el tráfico', async () => {
+            health.setConsuming.mockClear();
+            await consumeCallback(buildFakeMsg(statusStatement()));
+            expect(health.setConsuming).not.toHaveBeenCalled();
+        });
+
+        test('si se cierra el canal (p. ej. corte de broker), deja de estar sano', () => {
+            channel.emit('close');
+            expect(health.setConsuming).toHaveBeenLastCalledWith(false);
+        });
+
+        test('si el broker cancela el consumo (mensaje null), deja de estar sano y fuerza la reconexión', async () => {
+            await consumeCallback(null);
+            expect(health.setConsuming).toHaveBeenLastCalledWith(false);
+            expect(channel.ack).not.toHaveBeenCalled();
+            expect(connection.close).toHaveBeenCalled();
+        });
+
+        test('si el broker cierra el canal de consumo con la conexión arriba, fuerza la reconexión', () => {
+            jest.spyOn(console, 'error').mockImplementation(() => {});
+            channel.emit('error', new Error('Channel closed by server: 406 (PRECONDITION-FAILED)'));
+            channel.emit('close');
+
+            expect(connection.close).toHaveBeenCalledTimes(1);
+            expect(health.setConsuming).toHaveBeenLastCalledWith(false);
+            console.error.mockRestore();
+        });
+
+        test('un corte de conexión (close sin error) no fuerza nada: la reconexión es de connection.js', () => {
+            channel.emit('close');
+            expect(connection.close).not.toHaveBeenCalled();
+        });
+
+        test('un error del canal antes de quedar activo lo maneja connection.js (el await de consume falla)', async () => {
+            jest.spyOn(console, 'error').mockImplementation(() => {});
+            const failing = buildFakeChannel();
+            failing.consume.mockImplementation(async () => {
+                failing.emit('error', new Error('404 NOT_FOUND - no queue'));
+                throw new Error('404 NOT_FOUND - no queue');
+            });
+            const conn = { createChannel: jest.fn().mockResolvedValue(failing), close: jest.fn().mockResolvedValue(undefined) };
+
+            await expect(startConsuming(conn)).rejects.toThrow('404');
+            expect(conn.close).not.toHaveBeenCalled();
+            console.error.mockRestore();
+        });
+
+        test('tras reconectar, el close tardío del canal anterior no apaga la salud del nuevo', async () => {
+            const newChannel = buildFakeChannel();
+            await startConsuming({ createChannel: jest.fn().mockResolvedValue(newChannel), close: jest.fn() });
+            health.setConsuming.mockClear();
+
+            channel.emit('close'); // el canal viejo
+            expect(health.setConsuming).not.toHaveBeenCalled();
+
+            newChannel.emit('close');
+            expect(health.setConsuming).toHaveBeenCalledWith(false);
         });
     });
 });

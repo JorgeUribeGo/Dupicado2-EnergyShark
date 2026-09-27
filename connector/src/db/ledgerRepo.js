@@ -1,10 +1,12 @@
+const config = require('../config');
 const pool = require('./pool');
 const { insertRejected } = require('./rejectedMessagesRepo');
 const { withTransaction } = require('./transaction');
 
-// Ventana de negociación (enunciado §Sobre el presupuesto) y periodo de cierre (ADR-002, addendum).
-const WINDOW_MINUTES = 20;
-const REPORT_LEAD_MINUTES = 5;
+// Ventana de negociación (enunciado §Sobre el presupuesto) y periodo de cierre (ADR-002, addendum),
+// en segundos. Salen de config para poder acelerarlas en pruebas (CYCLE_TIME_SCALE, U5).
+const WINDOW_SECONDS = config.cycle.negotiationWindowMs / 1000;
+const REPORT_LEAD_SECONDS = config.cycle.reportLeadMs / 1000;
 
 // Serializa las escrituras al ledger: con prefetch(8) dos handlers concurrentes leerían el mismo
 // saldo anterior. ponytail: lock global, basta a decenas de eventos por ciclo.
@@ -52,8 +54,8 @@ async function insertEvent(client, env, { budgetFactorA, budgetFactorB = 1, delt
 async function applyStatusStatement(client, env) {
     const { rows } = await client.query(
         `INSERT INTO cycles (cycle_id, status_statement, window_opens_at, window_closes_at, report_due_at)
-         VALUES ($1, $2, $3::timestamptz - make_interval(mins => $4), $3::timestamptz,
-                 $3::timestamptz - make_interval(mins => $5))
+         VALUES ($1, $2, $3::timestamptz - make_interval(secs => $4), $3::timestamptz,
+                 $3::timestamptz - make_interval(secs => $5))
          ON CONFLICT (cycle_id) DO UPDATE SET
             status_statement = EXCLUDED.status_statement,
             window_opens_at  = EXCLUDED.window_opens_at,
@@ -62,7 +64,7 @@ async function applyStatusStatement(client, env) {
          WHERE cycles.status_statement IS NULL
             OR cycles.status_statement->>'idpk' IS DISTINCT FROM EXCLUDED.status_statement->>'idpk'
          RETURNING cycle_id`,
-        [env.cycleId, env, env.data.validUntil, WINDOW_MINUTES, REPORT_LEAD_MINUTES],
+        [env.cycleId, env, env.data.validUntil, WINDOW_SECONDS, REPORT_LEAD_SECONDS],
     );
     if (rows.length === 0) return recordDuplicate(client, env);
     return { result: 'applied' };
