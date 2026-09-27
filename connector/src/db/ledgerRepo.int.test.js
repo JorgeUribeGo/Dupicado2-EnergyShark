@@ -27,7 +27,7 @@ run('ledgerRepo (integración con Postgres)', () => {
         pool = require('./pool');
         ({ applyToLedger, getCycleBalances } = require('./ledgerRepo'));
     });
-    beforeEach(() => pool.query('TRUNCATE ledger_events, cycles, rejected_messages'));
+    beforeEach(() => pool.query('TRUNCATE ledger_events, status_statements, cycles, rejected_messages'));
     afterAll(() => pool.end());
 
     test('status-statement fija ventanas del ciclo sin crear evento de ledger', async () => {
@@ -50,6 +50,19 @@ run('ledgerRepo (integración con Postgres)', () => {
         expect(await applyToLedger(correction)).toEqual({ result: 'applied' });
         const { rows: [c] } = await pool.query('SELECT status_statement FROM cycles');
         expect(c.status_statement.idpk).toBe(correction.idpk);
+    });
+
+    test('reenviar el PRIMER status-statement después de una corrección no pisa la corrección (revisión PR #2)', async () => {
+        const first = statusStatement('cycle-1');
+        const correction = statusStatement('cycle-1');
+        await applyToLedger(first);
+        await applyToLedger(correction);
+
+        expect(await applyToLedger({ ...first, msgId: randomUUID() })).toEqual({ result: 'duplicate' });
+        const { rows: [c] } = await pool.query('SELECT status_statement FROM cycles');
+        expect(c.status_statement.idpk).toBe(correction.idpk);
+        const { rows: history } = await pool.query('SELECT idpk FROM status_statements ORDER BY id');
+        expect(history.map((h) => h.idpk)).toEqual([first.idpk, correction.idpk]);
     });
 
     test('transfer suma al budget; un reenvío con el mismo idpk no se re-aplica y queda registrado (RF05)', async () => {
