@@ -1,32 +1,80 @@
 const fs = require('fs');
 const config = require('./config');
 const { validateEnvelope } = require('./protocol/envelope');
+const { isResponseType } = require('./protocol/responses');
 const { insertRejected } = require('./db/rejectedMessagesRepo');
-const { publishOutbound } = require('./outbox');
+const { applyToLedger } = require('./db/ledgerRepo');
+const { withTransaction } = require('./db/transaction');
+const { enqueueAck, enqueueNack } = require('./outbox');
 
-async function handleNack(channel, msg, routingKey, nackResult) {
-    console.warn(`[nack] routingKey=${routingKey} reason=${nackResult.reason}`);
+async function handleDiscard(routingKey, result) {
+    console.warn(`[descartado] routingKey=${routingKey} reason=${result.reason}`);
     await insertRejected({
-        kind: 'nack',
+        kind: 'discarded',
+        reason: result.reason,
+        detail: result.detail || `routingKey=${routingKey}`,
+    });
+}
+
+async function handleNack(routingKey, nackResult) {
+    const rejected = {
         msgType: nackResult.msgType,
         idpk: nackResult.idpk,
         msgId: nackResult.target,
         reason: nackResult.reason,
-        code: nackResult.code,
-        detail: `routingKey=${routingKey}; ${nackResult.message}`,
-    });
-    // TODO(U2): esto debería ir a outbox_messages en la misma transacción que la fila de
-    // arriba, no como una llamada separada. publishOutbound es un stub hasta que U2 exista.
-    publishOutbound('nack', {
-        reason: nackResult.reason,
-        code: nackResult.code,
-        data: {
+    };
+
+    // Un ack/nack/error malformado no se NACKea: sin respuestas a respuestas (ADR-001, addendum U2).
+    if (isResponseType(nackResult.msgType)) {
+        console.warn(`[descartado] routingKey=${routingKey} ${nackResult.msgType} malformado, no se responde: ${nackResult.message}`);
+        await insertRejected({
+            ...rejected,
+            kind: 'discarded',
+            detail: `routingKey=${routingKey}; ${nackResult.msgType} malformado, sin respuesta (no se responden respuestas); ${nackResult.message}`,
+        });
+        return;
+    }
+
+    console.warn(`[nack] routingKey=${routingKey} reason=${nackResult.reason}`);
+    await withTransaction(async (client) => {
+        await insertRejected({
+            ...rejected,
+            kind: 'nack',
+            code: nackResult.code,
+            detail: `routingKey=${routingKey}; ${nackResult.message}`,
+        }, client);
+        await enqueueNack(client, {
             target: nackResult.target,
+            reason: nackResult.reason,
+            code: nackResult.code,
             message: nackResult.message,
-            ...(nackResult.cycleId ? { cycleId: nackResult.cycleId } : {}),
-        },
+            cycleId: nackResult.cycleId,
+        });
     });
-    channel.ack(msg);
+}
+
+// Sin chequeo de identidad aquí: confirmado contra el broker real que la central no adjunta
+// user_id AMQP al publicar. Esa verificación la hace LA CENTRAL sobre lo que nosotros
+// publicamos, no nosotros al consumir (ADR-001, addendum 2026-09-22).
+async function handleAccepted(routingKey, env) {
+    console.log(`[aceptado] routingKey=${routingKey} type=${env.type} msgId=${env.msgId}`);
+    await withTransaction(async (client) => {
+        // U4/U7: status-statement, transfer y demand-statement. Un duplicado (mismo idpk) no se
+        // re-aplica, pero se responde igual que la primera vez (ADR-002).
+        const applied = await applyToLedger(env, client);
+        if (applied.result !== 'ignored') console.log(`[ledger] ${applied.result} type=${env.type} idpk=${env.idpk}`);
+
+        if (!isResponseType(env.type)) await enqueueAck(client, env.msgId);
+    });
+}
+
+// Decide qué hacer con un mensaje crudo y lo deja persistido. Cada rama escribe su decisión y su
+// respuesta en una sola transacción (ADR-001): si lanza, no quedó nada y el mensaje debe reentregarse.
+async function processMessage(content, routingKey) {
+    const result = validateEnvelope(content);
+    if (result.action === 'discard') return handleDiscard(routingKey, result);
+    if (result.action === 'nack') return handleNack(routingKey, result);
+    return handleAccepted(routingKey, result.envelope);
 }
 
 async function startConsuming(connection) {
@@ -46,37 +94,29 @@ async function startConsuming(connection) {
         // a todas las ciudades) — se registra cuál fue, no cambia ninguna regla de validación.
         const routingKey = msg.fields.routingKey;
 
-        const result = validateEnvelope(msg.content);
-
-        if (result.action === 'discard') {
-            console.warn(`[descartado] routingKey=${routingKey} reason=${result.reason}`);
-            await insertRejected({
-                kind: 'discarded',
-                reason: result.reason,
-                detail: result.detail || `routingKey=${routingKey}`,
-            });
-            // Ack a nivel AMQP para no bloquear la cola con basura irrecuperable — no hay
-            // mensaje de protocolo que responder (ADR-001).
-            channel.ack(msg);
-            fs.writeFileSync('/tmp/healthy', '');
+        try {
+            await processMessage(msg.content, routingKey);
+        } catch (err) {
+            // Nada quedó persistido. Se devuelve a la cola tras un retardo (basic.nack de AMQP, no
+            // el NACK del protocolo): sin esto, 8 fallos seguidos agotan el prefetch y el nodo queda
+            // sordo hasta reconectar; sin el retardo, una DB caída sería un loop caliente de reentregas.
+            const delay = config.consumer.redeliveryDelayMs;
+            console.error(`[consumer] error procesando mensaje (routingKey=${routingKey}): ${err.message}. Se reentrega en ${delay} ms`);
+            setTimeout(() => {
+                try {
+                    channel.nack(msg, false, true);
+                } catch {
+                    // Canal ya cerrado: RabbitMQ reentrega solo los mensajes sin ack al reconectar.
+                }
+            }, delay);
             return;
         }
 
-        if (result.action === 'nack') {
-            await handleNack(channel, msg, routingKey, result);
-            fs.writeFileSync('/tmp/healthy', '');
-            return;
-        }
-
-        // Sin chequeo de identidad aquí: confirmado contra el broker real que la central no
-        // adjunta user_id AMQP al publicar (propiedades ausentes en mensajes legítimos). El
-        // enunciado describe esa verificación como algo que LA CENTRAL hace sobre lo que
-        // nosotros publicamos, no algo que nosotros hagamos al consumir — ver ADR-001.
-        console.log(`[aceptado] routingKey=${routingKey} type=${result.envelope.type} msgId=${result.envelope.msgId}`);
-        // TODO(U2/U4/U6/U7/U8): ACK real (vía outbox) + aplicar el envelope al ledger.
+        // Ack AMQP recién después del COMMIT (ADR-001). Un descarte también se confirma, para no
+        // bloquear la cola con basura irrecuperable.
         channel.ack(msg);
         fs.writeFileSync('/tmp/healthy', '');
     }, { noAck: false });
 }
 
-module.exports = { startConsuming };
+module.exports = { startConsuming, processMessage };

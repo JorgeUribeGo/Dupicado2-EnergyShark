@@ -121,3 +121,53 @@ ciclo, no una operación aplicada.
   que la primera vez (mismo `type` de respuesta), y sí registrar el intento en `rejected_messages`
   con `kind: 'duplicate'` — esa fila es la evidencia que RF05 y la demo van a pedir ver.
 - `GET /api/cycles` (RF01) hace join entre `cycles` y `ledger_events` agregando por `cycle_id`.
+
+### Addendum — precisiones antes de implementar U3/U4/U7 (2026-09-25, Pedro)
+
+Escrito **antes** del código de U3/U4/U7 (mismo criterio de RDOC01). No cambia la decisión (event
+log append-only en Postgres); fija cuatro detalles que el esquema original dejaba abiertos:
+
+1. **`cycles.window_*` y `report_due_at` son nullable.** El orden de llegada no está garantizado:
+   un `transfer` o `demand-statement` puede llegar antes que el `status-statement` de su ciclo, y
+   `ledger_events.cycle_id` es FK a `cycles`. La fila del ciclo se crea con el primer mensaje que
+   lo nombra; las ventanas se completan cuando llega el `status-statement`:
+   `window_closes_at = data.validUntil` (el statement "es válido por 20 minutos" = la ventana),
+   `window_opens_at = validUntil − 20 min`, `report_due_at = window_closes_at − 5 min`.
+   El scheduler (U5) filtra por `report_due_at <= now()`, así que un ciclo sin ventanas nunca
+   dispara un reporte — coherente con "sólo deben reporte por un ciclo en el que la central les
+   habló".
+2. **`cycles.status_statement` guarda el envelope completo**, no solo `data`: así el `idpk` queda
+   persistido y un reenvío con el mismo `idpk` se registra como `duplicate` en `rejected_messages`
+   (RF05). Uno con `idpk` nuevo reemplaza al anterior (el enunciado dice "último recibido").
+3. **Semántica de `resulting_*`.** `resulting_budget` es acumulado **global** (el budget se
+   traspasa entre ciclos). `resulting_energy` es acumulado **dentro del ciclo** (la energía no se
+   almacena: se pierde al cierre) y contiene solo los movimientos (deltas), no la base. El balance
+   energético del ciclo es `(generationCapacity − consumption) + resulting_energy` del último
+   evento. Así ningún `resulting_*` depende de si el `status-statement` llegó antes o después.
+   Los cálculos se hacen en SQL (`NUMERIC`), no en floats de JS.
+4. **Escrituras serializadas.** `connector` consume con `prefetch(8)`: dos handlers concurrentes
+   leerían el mismo "saldo anterior". Cada escritura al ledger toma `pg_advisory_xact_lock` dentro
+   de su transacción. Un lock global basta a este volumen (decenas de eventos por ciclo).
+
+Alcance: U4 aplica los `transfer` **sin** `becauseOf` (fondos del ciclo; `quantity` ya viene neta
+de la multa, `penalty` es informativo y queda en `payload`). Los `transfer` con `becauseOf` son el
+pago de una negociación voluntaria y los aplica U6 con el `idpk` de `pending_operations`
+(ADR-003, paso 4) — U4 no los toca, para que no exista una segunda vía que los aplique dos veces.
+
+### Addendum 2 — idempotencia de `status-statement` (2026-09-27, Pedro)
+
+Escrito antes del arreglo, a partir de la revisión del PR #2. El addendum anterior (§2) detectaba
+un reenvío comparando solo con el `idpk` del **último** `status-statement`. Si llega una corrección
+(`idpk` nuevo) y después se reenvía el **primero**, su `idpk` ya no es el último: se aplicaba de
+nuevo y pisaba la corrección. Es la anomalía #1 de la demo.
+
+**Decisión:** tabla append-only `status_statements` (`idpk UNIQUE`, `cycle_id`, `msg_id`,
+`payload`, `received_at`) con **todos** los `status-statement` aplicados. Antes de actualizar
+`cycles.status_statement`, se inserta ahí con `ON CONFLICT (idpk) DO NOTHING`: si no se insertó,
+es un reenvío y va a `rejected_messages` como `duplicate`. `cycles.status_statement` sigue siendo
+"el último recibido".
+
+**Alternativa descartada:** un arreglo `status_statement_idpks UUID[]` en `cycles`. Resuelve lo
+mismo, pero la tabla deja además el historial completo de statements de cada ciclo, que es lo que
+pide AD2 (reconstruible y explicable), y reutiliza el mismo mecanismo `UNIQUE(idpk)` que
+`ledger_events`.
