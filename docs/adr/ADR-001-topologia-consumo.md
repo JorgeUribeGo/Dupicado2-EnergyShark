@@ -137,3 +137,44 @@ topología, no sus valores:
   algo que **la central hace sobre lo que nosotros publicamos**, no algo que nosotros debamos
   verificar al recibir — le corresponde a U2 asegurarse de adjuntar `userId` (el propio, patrón
   `city.{CODE}`) en cada `channel.publish(...)`, no a U1 validarlo en la entrada.
+
+### Addendum — precisiones antes de implementar U2 (2026-09-26, David)
+
+Escrito **antes** del código de U2 (mismo criterio de RDOC01). No cambia la decisión (outbox
+transaccional + loop de publicación); fija los detalles que el texto original dejaba abiertos:
+
+1. **Forma de las respuestas.** `ack`, `nack` y `error` llevan siempre `msgId` **e** `idpk` nuevos
+   (UUID aleatorios) y apuntan al mensaje respondido solo por `data.target` (nunca se reutiliza su
+   `msgId`). `reason`/`code` van al nivel superior; `data.message` es el texto humano y `data.cycleId`
+   se devuelve tal cual cuando el mensaje original traía uno. El único "reenvío" de una respuesta es
+   que el loop republique la misma fila del outbox, que sale byte a byte igual (mismo `msgId` y mismo
+   `idpk`): un duplicado exacto, descartable por el receptor.
+2. **`cityId` y `user_id` salen del mismo valor.** El `cityId` del body se deriva del usuario AMQP
+   (`city.{CODE}` → `CODE`), y ese mismo usuario va en la propiedad `userId` de cada `publish`. Así
+   no existe una segunda variable que pueda divergir y provocar `IDENTITY_MISMATCH`.
+3. **Destino.** Todo lo que emitimos va a la central (la relación es exclusivamente con ella, según el
+   enunciado): exchange `RABBITMQ_EXCHANGE`, routing key `RABBITMQ_CENTRAL_ROUTING_KEY` (por defecto
+   `central`). Sin declarar topología, como en U1.
+4. **Nunca respondemos una respuesta.** A un mensaje de tipo `ack`, `nack` o `error` no se le hace
+   `ack` ni `nack`, **aunque venga malformado**: se registra como `discarded` en `rejected_messages`.
+   Es la regla del enunciado ("no ACKs de ACKs, ni NACKs de NACKs, ni ACKs/errores de errores")
+   aplicada sin excepciones, porque un loop de cortesía con la central es justamente lo que la
+   política de abuso de mensajería del curso sanciona.
+5. **Misma transacción que la decisión.** Mensaje aceptado: aplicar al ledger + fila `ack` en el
+   outbox. Mensaje malformado: fila en `rejected_messages` + fila `nack` en el outbox. Si alguna vez
+   emitimos un `error`, su `ack` se encola en la misma transacción y **antes** (menor `id`); como el
+   loop publica por orden de `id`, "un error siempre va precedido de su ack" queda garantizado por
+   construcción, no por disciplina. Solo después del `COMMIT` se hace `ack` AMQP del mensaje entrante.
+6. **Publicación con confirmaciones.** El loop usa un *confirm channel* propio (separado del canal de
+   consumo) y marca `sent` solo cuando RabbitMQ confirma. Publica en orden de `id`, y si un envío
+   falla corta el lote y reintenta en el siguiente tick, para no invertir el orden (un `error` antes
+   de su `ack`). El siguiente tick se agenda recién cuando termina el anterior (no `setInterval`),
+   así dos ticks nunca se solapan. Semántica *at-least-once*: si el proceso muere entre la
+   confirmación y el `UPDATE ... sent`, la fila se republica igual. Supone **una sola instancia** de
+   `connector`; escalarlo exigiría reclamar filas con `FOR UPDATE SKIP LOCKED`.
+7. **Falla de DB al procesar un mensaje entrante.** Se resuelve la nota que dejó U4 en `consumer.js`:
+   sin `ack` el mensaje ocupa un slot de `prefetch` hasta reconectar, y con 8 fallos seguidos (p. ej.
+   Postgres reiniciando) el nodo quedaba sordo aunque el broker siguiera arriba. Ahora, tras un
+   retardo (5 s), se devuelve a la cola con `basic.nack` + `requeue` (el `nack` de AMQP, no el NACK
+   del protocolo): nada se pierde, y el retardo evita un loop caliente de reentregas mientras la DB
+   no vuelva.
