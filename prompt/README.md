@@ -1,4 +1,4 @@
-# prompt/ — trazabilidad de las sesiones con IA (Pedro)
+# prompt/ — trazabilidad de las sesiones con IA (Pedro y David)
 
 Registro de cada subtarea ejecutada con Claude Code (Opus 5.5, agéntico: edita archivos y corre
 comandos en el repo). Complementa el AI log resumido en `docs/ai_docs/` (RDOC02).
@@ -17,3 +17,13 @@ sesión (sin subagentes). El texto en "Prompt utilizado" de cada archivo es lite
 
 Tareas **no** ejecutadas: U10 (bloqueada por la decisión abierta api→connector, ver reparto) y el
 endpoint `GET /api/distance-table` de U9 (depende del U8 de Esteban).
+
+## David
+
+Cada unidad se hizo en una sesión de Claude Code (Opus 5.5, agéntico). El prompt de cada sesión
+está en su AI log (`docs/ai_docs/`); los de subtarea se escribieron después, a partir de lo hecho
+en la rama.
+
+| Carpeta | Unidad | Rama / PR |
+|---|---|---|
+| `tarea-u2/` | U2 — ack/nack/error y outbox transaccional | `feat/u2-ack-outbox` (#5, apilado sobre `feat/u3-u4-u7-ledger`) |
