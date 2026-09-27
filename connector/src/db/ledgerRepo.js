@@ -65,6 +65,14 @@ async function insertEvent(client, env, { budgetFactorA, budgetFactorB = 1, delt
 // No genera fila en ledger_events: fija el estado del ciclo (ADR-002). Un status-statement con idpk
 // nuevo reemplaza al anterior; con el mismo idpk es un reenvío y queda como duplicado (RF05).
 async function applyStatusStatement(client, env) {
+    // Reenvío de CUALQUIER statement ya aplicado, no solo del último (ADR-002, addendum 2).
+    const { rowCount } = await client.query(
+        `INSERT INTO status_statements (idpk, cycle_id, msg_id, payload) VALUES ($1, $2, $3, $4)
+         ON CONFLICT (idpk) DO NOTHING`,
+        [env.idpk, env.cycleId, env.msgId, env],
+    );
+    if (rowCount === 0) return recordDuplicate(client, env);
+
     const { rows } = await client.query(
         `INSERT INTO cycles (cycle_id, status_statement, window_opens_at, window_closes_at, report_due_at)
          VALUES ($1, $2, $3::timestamptz - make_interval(mins => $4), $3::timestamptz,
