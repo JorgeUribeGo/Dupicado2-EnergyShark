@@ -209,6 +209,9 @@ addendum de U10 dejaban abierto, y corrige dos puntos del flujo (7 y 11).
 10. **Rechazos de la central.** Un `error` o `nack` cuyo `target` es una propuesta nuestra en
     `awaiting_confirmation` la deja en `rejected`, con el `reason` de la central y su mensaje, más
     `cap` o `spare` si vienen. No se reintenta: la misma propuesta recibiría el mismo rechazo.
+    `PRICE_ABOVE_CAP` se acepta también como `nack`: el enunciado dice que viaja como `error`, pero
+    su propio ejemplo lo muestra con `"type": "nack"`. Sin aceptarlo en el contrato, ese `nack` se
+    descartaría por malformado y la propuesta esperaría hasta abandonarse.
 11. **Las abandonadas no van a `rejected_messages`** (corrige el paso 2). Esa tabla registra
     mensajes **recibidos** que rechazamos (RF05). Una operación abandonada queda visible en
     `pending_operations` con su `failure_reason`, en `/api/negotiations` (RF04, estado `expired`) y en

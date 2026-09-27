@@ -46,6 +46,9 @@ una línea en `schemas/messages/distance-table.schema.json` — pero no lo den p
 | IDPK_EQUALS_MSGID  | 422  |
 | IDENTITY_MISMATCH  | 403  |
 
+`PRICE_ABOVE_CAP` (422) también se acepta como NACK: el enunciado dice que viaja como `error`, pero su
+propio ejemplo lo muestra con `"type": "nack"`. El connector trata ambos igual (ADR-003, addendum U6 §10).
+
 ## Tabla error — rechazo de OPERACIÓN (siempre precedido de `ack`)
 
 | reason           | code | Cuándo                                    |

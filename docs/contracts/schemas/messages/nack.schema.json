@@ -8,12 +8,13 @@
     { "if": { "properties": { "reason": { "const": "MALFORMED_MESSAGE" } } }, "then": { "properties": { "code": { "const": 422 } } } },
     { "if": { "properties": { "reason": { "const": "UNKNOWN_TYPE" } } }, "then": { "properties": { "code": { "const": 400 } } } },
     { "if": { "properties": { "reason": { "const": "IDPK_EQUALS_MSGID" } } }, "then": { "properties": { "code": { "const": 422 } } } },
-    { "if": { "properties": { "reason": { "const": "IDENTITY_MISMATCH" } } }, "then": { "properties": { "code": { "const": 403 } } } }
+    { "if": { "properties": { "reason": { "const": "IDENTITY_MISMATCH" } } }, "then": { "properties": { "code": { "const": 403 } } } },
+    { "if": { "properties": { "reason": { "const": "PRICE_ABOVE_CAP" } } }, "then": { "$comment": "El enunciado dice que PRICE_ABOVE_CAP viaja como error, pero su propio ejemplo lo muestra como nack: se aceptan ambos y el connector lo trata igual (propuesta rechazada). Ver ADR-003, addendum U6 §10.", "properties": { "code": { "const": 422 } } } }
   ],
   "type": "object",
   "properties": {
     "type": { "const": "nack" },
-    "reason": { "type": "string", "enum": ["MALFORMED_MESSAGE", "UNKNOWN_TYPE", "IDPK_EQUALS_MSGID", "IDENTITY_MISMATCH"] },
+    "reason": { "type": "string", "enum": ["MALFORMED_MESSAGE", "UNKNOWN_TYPE", "IDPK_EQUALS_MSGID", "IDENTITY_MISMATCH", "PRICE_ABOVE_CAP"] },
     "code": { "type": "integer", "enum": [400, 403, 422] },
     "data": {
       "type": "object",
@@ -21,7 +22,8 @@
       "properties": {
         "target": { "type": "string", "format": "uuid", "description": "msgId del mensaje respondido." },
         "message": { "type": "string", "description": "Texto humano describiendo la falla." },
-        "cycleId": { "type": "string", "description": "Solo si el mensaje rechazado traía uno." }
+        "cycleId": { "type": "string", "description": "Solo si el mensaje rechazado traía uno." },
+        "cap": { "type": "number", "description": "Solo en PRICE_ABOVE_CAP: round2(1.05*generationCost)." }
       }
     }
   },
