@@ -1,33 +1,10 @@
 const { Op } = require('sequelize');
 const { Cycle, LedgerEvent, PendingOperation } = require('../models');
 const { parsePagination } = require('./pagination');
+const { toNegotiation } = require('./negotiationsController');
 
 // DECIMAL de Postgres llega como string; el contrato (openapi.yaml) expone number.
 const num = (value) => (value === null || value === undefined ? null : Number(value));
-
-// Estados internos de pending_operations (ADR-003) -> estados del contrato Negotiation.
-const NEGOTIATION_STATUS = {
-    awaiting_confirmation: 'proposed',
-    awaiting_payment: 'confirmed',
-    settled: 'paid',
-    abandoned: 'expired',
-};
-
-function toNegotiation(op) {
-    return {
-        id: num(op.id),
-        cycleId: op.cycleId,
-        idpk: op.idpk,
-        direction: op.direction,
-        quantity: num(op.quantity),
-        pricePerEnergy: num(op.pricePerEnergy),
-        settledPricePerEnergy: null, // TODO(U6/U10): no se persiste aún en pending_operations
-        status: NEGOTIATION_STATUS[op.status] || op.status,
-        proposedAt: op.createdAt,
-        confirmedAt: null,
-        paidAt: null,
-    };
-}
 
 // Arma el CycleSummary de openapi.yaml (RF01). events viene ordenado por id ASC.
 function toCycleSummary(cycle, events, ops) {

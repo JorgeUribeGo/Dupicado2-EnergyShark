@@ -217,6 +217,10 @@ paths:
                         items: { $ref: "#/components/schemas/Negotiation" }
     post:
       summary: Crear una propuesta de negociación manual (RF04)
+      description: >
+        Registra la propuesta (status interno 'requested', expuesto como 'proposed'); el connector
+        la publica en el siguiente tick de su sweeper (ADR-003, addendum U10). El tope de precio y
+        la capacidad los valida la central.
       requestBody:
         required: true
         content:
@@ -231,12 +235,14 @@ paths:
                 pricePerEnergy: { type: number, exclusiveMinimum: 0 }
       responses:
         "201":
-          description: Propuesta creada y publicada al broker
+          description: Propuesta registrada; el connector la publica al broker
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Negotiation" }
+        "400":
+          description: "Body inválido (direction, quantity o pricePerEnergy)"
         "409":
-          description: "cycleId ya cerrado o fuera de ventana de negociación"
+          description: "cycleId inexistente, ya cerrado o fuera de ventana de negociación"
 
   /api/negotiations/{id}:
     get:
@@ -249,6 +255,8 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Negotiation" }
+        "404":
+          description: id no existe
 
   /api/messages/rejected:
     get:
