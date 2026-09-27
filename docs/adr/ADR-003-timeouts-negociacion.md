@@ -108,3 +108,31 @@ reiniciar el contenedor, la primera pasada del sweeper simplemente encuentra las
   "tick" que revisa ambas tablas — decisión de implementación libre, no architectural.
 - Registrar `attempts` y el motivo de `abandoned` en el log de la aplicación (no solo en DB): es
   justo el tipo de dato que la demo pedirá explicar en el segmento de monitoreo (anomalía #5).
+
+### Addendum — negociaciones manuales desde la API (RF04/U10) (2026-09-25, Pedro + David)
+
+Escrito **antes** del código de U10. Resuelve cómo una propuesta creada desde el frontend llega al
+broker sin romper ADR-001 (`api` nunca publica; solo comparte Postgres con `connector`).
+
+**Decisión:** `api` inserta la operación en `pending_operations` con un estado nuevo, `requested`.
+El sweeper de U6 (`connector`) la recoge y la publica igual que una automática.
+
+- Estados: `requested` → `awaiting_confirmation` → `awaiting_payment` → `settled` | `abandoned`.
+- `api` genera el `idpk` al insertar (decisiones fundacionales §4: el `idpk` nace cuando se decide
+  la operación y nunca se regenera). No genera `msgId` ni arma el envelope.
+- `last_msg_id` y `expires_at` pasan a ser **nullable**: son `NULL` solo mientras la fila está en
+  `requested` (todavía no hubo envío ni timer).
+- Sweeper (U6), en una transacción: `SELECT ... WHERE status = 'requested' FOR UPDATE SKIP LOCKED`
+  → armar el `negotiation-proposal` con un `msgId` nuevo, escribirlo en `outbox_messages`, y dejar
+  la fila en `awaiting_confirmation` con `last_msg_id`, `attempts = 1`, `expires_at = now() + 30s`.
+  Desde ahí el flujo es idéntico al de este ADR.
+- `api` solo valida lo que es estado de la DB: body bien formado y ciclo existente, en fase
+  `negotiating` y con la ventana abierta (si no, 409). El tope de precio (`PRICE_ABOVE_CAP`) y la
+  capacidad (`OVER_CAPACITY`) los resuelve la central; el conocimiento del protocolo sigue solo en
+  `connector`.
+
+**Alternativa descartada:** que `api` escriba también el `negotiation-proposal` en
+`outbox_messages` en la misma transacción. Evita el estado nuevo, pero obliga a `api` a saber armar
+mensajes del protocolo (envelope, `cityId`) y duplica esa lógica fuera de `connector`.
+
+**Tradeoff aceptado:** hasta ~5 s (un tick del sweeper) entre crear la propuesta y publicarla.
