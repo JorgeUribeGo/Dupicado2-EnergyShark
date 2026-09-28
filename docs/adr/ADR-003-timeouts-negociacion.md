@@ -108,3 +108,134 @@ reiniciar el contenedor, la primera pasada del sweeper simplemente encuentra las
   "tick" que revisa ambas tablas — decisión de implementación libre, no architectural.
 - Registrar `attempts` y el motivo de `abandoned` en el log de la aplicación (no solo en DB): es
   justo el tipo de dato que la demo pedirá explicar en el segmento de monitoreo (anomalía #5).
+
+### Addendum — negociaciones manuales desde la API (RF04/U10) (2026-09-25, Pedro + David)
+
+Escrito **antes** del código de U10. Resuelve cómo una propuesta creada desde el frontend llega al
+broker sin romper ADR-001 (`api` nunca publica; solo comparte Postgres con `connector`).
+
+**Decisión:** `api` inserta la operación en `pending_operations` con un estado nuevo, `requested`.
+El sweeper de U6 (`connector`) la recoge y la publica igual que una automática.
+
+- Estados: `requested` → `awaiting_confirmation` → `awaiting_payment` → `settled` | `abandoned`.
+- `api` genera el `idpk` al insertar (decisiones fundacionales §4: el `idpk` nace cuando se decide
+  la operación y nunca se regenera). No genera `msgId` ni arma el envelope.
+- `last_msg_id` y `expires_at` pasan a ser **nullable**: son `NULL` solo mientras la fila está en
+  `requested` (todavía no hubo envío ni timer).
+- Sweeper (U6), en una transacción: `SELECT ... WHERE status = 'requested' FOR UPDATE SKIP LOCKED`
+  → armar el `negotiation-proposal` con un `msgId` nuevo, escribirlo en `outbox_messages`, y dejar
+  la fila en `awaiting_confirmation` con `last_msg_id`, `attempts = 1`, `expires_at = now() + 30s`.
+  Desde ahí el flujo es idéntico al de este ADR.
+- `api` solo valida lo que es estado de la DB: body bien formado y ciclo existente, en fase
+  `negotiating` y con la ventana abierta (si no, 409). El tope de precio (`PRICE_ABOVE_CAP`) y la
+  capacidad (`OVER_CAPACITY`) los resuelve la central; el conocimiento del protocolo sigue solo en
+  `connector`.
+
+**Alternativa descartada:** que `api` escriba también el `negotiation-proposal` en
+`outbox_messages` en la misma transacción. Evita el estado nuevo, pero obliga a `api` a saber armar
+mensajes del protocolo (envelope, `cityId`) y duplica esa lógica fuera de `connector`.
+
+**Tradeoff aceptado:** hasta ~5 s (un tick del sweeper) entre crear la propuesta y publicarla.
+
+### Addendum — precisiones antes de implementar U6 (2026-09-27, David)
+
+Escrito **antes** del código de U6 (RDOC01). No cambia la decisión (`pending_operations` + sweeper
+de 5 s, `MAX_ATTEMPTS = 5`, mismo `idpk` en cada reintento); fija lo que el texto original y el
+addendum de U10 dejaban abierto, y corrige dos puntos del flujo (7 y 11).
+
+1. **Estados.** `requested` → `awaiting_confirmation` → `awaiting_payment` → `settled`, con dos
+   finales de falla: `abandoned` (se agotó el tiempo) y `rejected` (nuevo: la operación no puede
+   ocurrir, por rechazo de la central o por validación local). La API expone `rejected` como
+   `rejected`, que ya estaba en el contrato `Negotiation` de `openapi.yaml`.
+2. **Columnas nuevas** (migración de U6): `origin` (`auto` | `manual`, por defecto `manual`),
+   `confirmation` (JSONB, la última confirmación `give`/`take` recibida), `confirmation_msg_ids`
+   (UUID[], todas las confirmaciones recibidas), `confirmed_at`, `paid_at`, `failure_reason` y
+   `failure_detail`. Un índice único parcial `(cycle_id) WHERE origin = 'auto'` garantiza una sola
+   propuesta automática por ciclo. Un índice en `outbox_messages (msg_id)` sirve para la correlación
+   del punto 5.
+3. **Estrategia automática (una por ciclo, sin rebalanceo).** Al aplicar un `status-statement`
+   nuevo, en la misma transacción del consumer, `connector` inserta una fila `requested` con
+   `origin = 'auto'` a partir del balance energético del ciclo en ese instante (ADR-002, addendum §3):
+   - Si sobra energía, un `give` de `min(balance, max(0, generationCapacity − consumption))`: el
+     excedente se pierde al cierre si no se vende, y no se puede vender más de lo generado.
+   - Si falta energía, un `take` de `|balance|`: la demanda no puede quedar sin cubrir.
+   - Si el balance es 0 o la ventana ya cerró, no se propone nada.
+   - `pricePerEnergy = round2(1.05 × generationCost)`, el tope. Ofertar exactamente el tope nunca da
+     `PRICE_ABOVE_CAP` y no cuesta más, porque la central liquida a su precio fijo.
+
+   No se rebalancea tras cada `demand-statement`: exigiría descontar lo que está en vuelo y arriesga
+   proponer en loop (política de abuso de mensajería). Queda como mejora posible.
+4. **Validación local antes de publicar.** El sweeper revisa cada `requested` y, si no pasa, la deja
+   en `rejected` **sin enviar nada** (es un rechazo seguro que nos ahorramos). Revisa que:
+   - El ciclo tenga `status-statement` (si no, `NO_STATUS_STATEMENT`).
+   - La ventana siga abierta (si no, `CYCLE_EXPIRED`).
+   - `pricePerEnergy <= round2(1.05 × generationCost)` (si no, `PRICE_ABOVE_CAP`).
+   - En un `give`, `quantity <= spare` (si no, `OVER_CAPACITY`). Aquí `spare` es
+     `max(0, generationCapacity − consumption)` menos los `give` del ciclo en
+     `awaiting_confirmation`, `awaiting_payment` o `settled`. Se cuenta lo que está en vuelo, que es
+     más conservador que la central, para no mandar dos `give` que juntos excedan.
+
+   Toda la aritmética es `NUMERIC` en SQL, igual que en ADR-002. `round2` es redondeo al centavo,
+   con la mitad hacia arriba. Esto corrige lo que dice el addendum de U10 ("el tope y la capacidad
+   los resuelve la central"): los valida `connector`, que sigue siendo el único que conoce el
+   protocolo, antes de ofertar.
+5. **Correlación.** Una confirmación apunta (`data.target`) al `msgId` de la propuesta, y ese
+   `msgId` cambia en cada reintento. Se busca la operación entre **todos** los `msgId` de propuesta
+   publicados con su `idpk`, usando `outbox_messages`, que es el historial de envíos, y no solo en
+   `last_msg_id`. Así, la confirmación del intento 1 que llega después del reenvío 2 sigue valiendo.
+   Un pago (`transfer` con `becauseOf`) se busca en `confirmation_msg_ids`.
+6. **Liquidación por dirección.**
+   - **`give`** (la central nos paga). Al llegar la confirmación, la operación pasa a
+     `awaiting_payment` con `expires_at = now + 30 s`. Al llegar el pago se aplica un evento `give`
+     al ledger: `+quantity` recibida y `−energy` confirmada, con el `idpk` de la operación. La
+     operación pasa a `settled`. Si `quantity ≠ round2(energy × pricePerEnergy)`, se loguea y se
+     aplica lo recibido.
+   - **`take`** (pagamos nosotros). No hay pago que esperar. Al llegar la confirmación se hace todo
+     en una transacción: un evento `take` (`−round2(energy × pricePerEnergy)`, `+energy`), nuestro
+     `transfer` en el outbox (`becauseOf` = `msgId` del `take`, con `idpk` y `msgId` nuevos) y
+     `settled`.
+7. **`attempts` no se resetea al confirmar** (corrige el paso 3). Cuenta los envíos de la propuesta
+   en toda la vida de la operación. Con el reset, una central que confirma pero nunca paga produciría
+   un loop infinito de confirmación → timeout → reenvío: justo lo que el tope quiere evitar. Tras un
+   timeout de pago, la operación vuelve a `awaiting_confirmation` con la propuesta reenviada.
+8. **Ventana cerrada.** Si una operación vence con la ventana de su ciclo ya cerrada, pasa a
+   `abandoned` (`WINDOW_CLOSED`) sin reenviar, porque sería un `CYCLE_EXPIRED` seguro. Si vence con
+   `attempts >= 5`, pasa a `abandoned` (`TIMEOUT`).
+9. **Mensajes tardíos.** Una confirmación para una operación `abandoned` se honra: la central la
+   ejecutó. Un pago para una operación en `awaiting_confirmation` (reenviada tras el timeout de pago)
+   o `abandoned` se aplica: la central pagó. Una confirmación o un pago para una operación `settled`
+   se registra como `duplicate` en `rejected_messages` (RF05) y no se aplica de nuevo. La garantía
+   final sigue siendo `UNIQUE(idpk)` en `ledger_events`.
+10. **Rechazos de la central.** Un `error` o `nack` cuyo `target` es una propuesta nuestra en
+    `awaiting_confirmation` la deja en `rejected`, con el `reason` de la central y su mensaje, más
+    `cap` o `spare` si vienen. No se reintenta: la misma propuesta recibiría el mismo rechazo.
+    `PRICE_ABOVE_CAP` se acepta también como `nack`: el enunciado dice que viaja como `error`, pero
+    su propio ejemplo lo muestra con `"type": "nack"`. Sin aceptarlo en el contrato, ese `nack` se
+    descartaría por malformado y la propuesta esperaría hasta abandonarse.
+11. **Las abandonadas no van a `rejected_messages`** (corrige el paso 2). Esa tabla registra
+    mensajes **recibidos** que rechazamos (RF05). Una operación abandonada queda visible en
+    `pending_operations` con su `failure_reason`, en `/api/negotiations` (RF04, estado `expired`) y en
+    el log con sus `attempts`.
+12. **Tiempos y concurrencia.** El tick de 5 s y el timeout de 30 s se dividen por
+    `CYCLE_TIME_SCALE`, igual que el resto de los tiempos del protocolo (decisiones fundacionales §3,
+    addendum U5). El sweeper corre en su propio loop sin solapamiento (`loop.js`) y bloquea cada fila
+    con `FOR UPDATE SKIP LOCKED`, en una transacción por operación. Los handlers que escriben al
+    ledger toman primero el lock del ledger (ADR-002, addendum §4) y después la fila de la operación.
+    El sweeper nunca toma el del ledger, así que no hay ciclos de espera.
+
+**Nota posterior a la implementación de U6 (2026-09-27, David).** Dos hallazgos al probar:
+- El SQL de este ADR declaraba `status VARCHAR(20)`, pero `'awaiting_confirmation'` (su propio
+  valor por defecto) tiene 21 caracteres. La primera propuesta publicada fallaba con `value too long`.
+  No se había notado porque U10 solo inserta `requested`. La migración de U6 amplía la columna a
+  `VARCHAR(30)`.
+- Tras un reinicio, el primer tick del sweeper corre antes de que el broker reentregue lo que quedó
+  sin `ack`. Una operación cuya confirmación ya estaba en la cola se reenvía una vez de más (mismo
+  `idpk`). Es inofensivo por diseño: la confirmación reentregada liquida la operación y la del
+  reenvío queda como `duplicate` sin pagar de nuevo (verificado de punta a punta con `kill -9`).
+
+**Nota posterior a la review de la PR #7 (2026-09-27, David).** Corrige el punto 2: un pago nombra
+(`becauseOf`) una confirmación concreta, que no tiene por qué ser la última. Tras un timeout de pago
+se reenvía la propuesta y la central puede confirmar de nuevo; si después paga la primera, liquidar
+con `confirmation` (la última) aplicaba la energía de otra confirmación. `confirmation_msg_ids` se
+reemplaza por `confirmations` (JSONB, cada confirmación recibida con su `msgId` como clave). El pago
+se liquida con la que nombra, y esa queda como `confirmation` de la operación ya `settled`.

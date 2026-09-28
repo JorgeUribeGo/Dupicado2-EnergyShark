@@ -59,4 +59,11 @@ module.exports = {
     scheduler: {
         tickMs: scaled(30 * 1000),
     },
+    // Negociación voluntaria (ADR-003 + addendum U6): la central confirma dentro de 30 s y, en un
+    // give, paga dentro de otros 30 s. MAX_ATTEMPTS cuenta envíos de la propuesta en toda su vida.
+    negotiation: {
+        timeoutMs: scaled(30 * 1000),
+        sweeperTickMs: scaled(5 * 1000),
+        maxAttempts: 5,
+    },
 };

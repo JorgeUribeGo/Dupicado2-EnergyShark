@@ -12,6 +12,7 @@ jest.mock('./db/ledgerRepo', () => ({ applyToLedger: jest.fn() }));
 jest.mock('./db/transaction', () => ({ withTransaction: jest.fn() }));
 jest.mock('./outbox', () => ({ enqueueAck: jest.fn(), enqueueNack: jest.fn() }));
 jest.mock('./reports', () => ({ handleReportError: jest.fn() }));
+jest.mock('./negotiation', () => ({ handleIncoming: jest.fn() }));
 jest.mock('./health', () => ({ setConsuming: jest.fn() }));
 
 const { insertRejected } = require('./db/rejectedMessagesRepo');
@@ -19,6 +20,7 @@ const { applyToLedger } = require('./db/ledgerRepo');
 const { withTransaction } = require('./db/transaction');
 const { enqueueAck, enqueueNack } = require('./outbox');
 const { handleReportError } = require('./reports');
+const negotiation = require('./negotiation');
 const health = require('./health');
 const { startConsuming } = require('./consumer');
 
@@ -154,6 +156,15 @@ describe('startConsuming (consumer.js)', () => {
     test('un tipo que no es error no pasa por el manejo de errores de reportes', async () => {
         await consumeCallback(buildFakeMsg(statusStatement()));
         expect(handleReportError).not.toHaveBeenCalled();
+    });
+
+    test('negociación (U6): recibe el mensaje y el resultado del ledger en la misma transacción, después del ack', async () => {
+        const body = fromCentral('give', { target: randomUUID(), energy: 10, pricePerEnergy: 10.5 }, { cycleId: 'cycle-1' });
+        applyToLedger.mockResolvedValue({ result: 'ignored' });
+        await consumeCallback(buildFakeMsg(body));
+
+        expect(negotiation.handleIncoming).toHaveBeenCalledWith(txClient, body, { result: 'ignored' });
+        expect(enqueueAck.mock.invocationCallOrder[0]).toBeLessThan(negotiation.handleIncoming.mock.invocationCallOrder[0]);
     });
 
     describe('si falla la DB', () => {

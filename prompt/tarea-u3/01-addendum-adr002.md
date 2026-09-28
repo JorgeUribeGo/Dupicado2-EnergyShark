@@ -12,8 +12,8 @@ energía (que no se almacena entre ciclos) frente al budget (que sí), ni cómo 
 
 ## Prompt utilizado
 ```
-Lee docs/adr/ADR-002-persistencia-ledger.md, ADR-003 y docs/E1-v1.1.md §Sobre el presupuesto,
-§Sobre la negociación y §Negociando bolsas de energía. Identifica los detalles del esquema que la
+Lee docs/adr/ADR-002-persistencia-ledger.md, ADR-003 y docs/E1-v1.1.md Sobre el presupuesto,
+Sobre la negociación y Negociando bolsas de energía. Identifica los detalles del esquema que la
 implementación de U3/U4/U7 tendría que decidir y que el ADR no resuelve. Escribe un addendum
 fechado al final de ADR-002 (sin cambiar la decisión: event log append-only en Postgres) que fije
 cada uno con su justificación. Commitéalo solo, antes de cualquier migración o código.
