@@ -40,6 +40,12 @@ describe('health (archivo del HEALTHCHECK)', () => {
         expect(fs.writeFileSync).not.toHaveBeenCalled();
     });
 
+    test('al arrancar se borra el archivo que haya dejado un proceso anterior', () => {
+        health.start();
+        expect(fs.unlinkSync).toHaveBeenCalledWith('/tmp/healthy');
+        expect(fs.writeFileSync).not.toHaveBeenCalled();
+    });
+
     test('si el archivo ya no existía, no es un error', () => {
         fs.unlinkSync.mockImplementationOnce(() => { throw Object.assign(new Error('no existe'), { code: 'ENOENT' }); });
         const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});

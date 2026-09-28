@@ -51,11 +51,11 @@ async function paymentAmount(db, energy, pricePerEnergy) {
 }
 
 // Una sola automática por ciclo (índice único parcial): un status-statement de reemplazo no agrega
-// otra. null si ya existía.
+// otra. Nace con attempts = 0: todavía no se envió. null si ya existía.
 async function insertAutoProposal(db, { idpk, cycleId, direction, quantity, pricePerEnergy }) {
     const { rows } = await db.query(
-        `INSERT INTO pending_operations (idpk, cycle_id, direction, quantity, price_per_energy, status, origin)
-         VALUES ($1, $2, $3, $4, $5, 'requested', 'auto')
+        `INSERT INTO pending_operations (idpk, cycle_id, direction, quantity, price_per_energy, status, origin, attempts)
+         VALUES ($1, $2, $3, $4, $5, 'requested', 'auto', 0)
          ON CONFLICT (cycle_id) WHERE origin = 'auto' DO NOTHING
          RETURNING *`,
         [idpk, cycleId, direction, quantity, pricePerEnergy],

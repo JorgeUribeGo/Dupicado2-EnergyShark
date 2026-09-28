@@ -1,4 +1,7 @@
-const { validateProposal, toNegotiation } = require('./negotiationsController');
+jest.mock('../models', () => ({ Cycle: { findByPk: jest.fn() }, PendingOperation: { create: jest.fn() } }));
+
+const { Cycle, PendingOperation } = require('../models');
+const { createNegotiation, validateProposal, toNegotiation } = require('./negotiationsController');
 
 const ok = { cycleId: 'cycle-1', direction: 'take', quantity: 2024, pricePerEnergy: 215 };
 
@@ -40,4 +43,16 @@ test.each([
 ])('una operación %s se expone como %s con su motivo', (internal, reason, status) => {
     expect(toNegotiation({ id: '3', status: internal, failureReason: reason, failureDetail: 'detalle' }))
         .toMatchObject({ status, failureReason: reason, failureDetail: 'detalle', settledPricePerEnergy: null, paidAt: null });
+});
+
+test('POST registra la intención con attempts = 0: todavía no hubo ningún envío', async () => {
+    Cycle.findByPk.mockResolvedValue({ phase: 'negotiating', windowClosesAt: new Date(Date.now() + 60000) });
+    PendingOperation.create.mockImplementation(async (values) => ({ reload: async () => ({ id: '7', ...values }) }));
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+    await createNegotiation({ body: ok }, res);
+
+    expect(PendingOperation.create).toHaveBeenCalledWith(expect.objectContaining({ status: 'requested', attempts: 0 }));
+    expect(res.status).toHaveBeenCalledWith(201);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ status: 'proposed', attempts: 0 }));
 });

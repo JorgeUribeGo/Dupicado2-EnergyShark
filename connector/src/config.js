@@ -2,7 +2,15 @@ require('dotenv').config();
 
 // Solo para pruebas locales: divide todas las duraciones del protocolo (con 60, un minuto del
 // protocolo dura un segundo). Nunca en producción: ahí las ventanas reales las fija la central.
-const timeScale = Number(process.env.CYCLE_TIME_SCALE) || 1;
+// Tiene que ser un número finito > 0: con -1 los timers quedan negativos y con Infinity en cero, y el
+// scheduler cerraría los ciclos al instante. Cualquier otro valor se ignora (escala 1).
+function parseTimeScale(raw) {
+    const value = Number(raw);
+    if (Number.isFinite(value) && value > 0) return value;
+    if (raw) console.warn(`[config] CYCLE_TIME_SCALE=${raw} no es un número positivo: se ignora (escala 1)`);
+    return 1;
+}
+const timeScale = parseTimeScale(process.env.CYCLE_TIME_SCALE);
 const MINUTE_MS = 60 * 1000;
 const scaled = (ms) => ms / timeScale;
 

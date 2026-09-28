@@ -70,6 +70,7 @@ async function createNegotiation(req, res) {
             quantity,
             pricePerEnergy,
             status: 'requested',
+            attempts: 0, // envíos de la propuesta: el sweeper pone 1 al publicarla (el default 1 es de ADR-003)
         });
         return res.status(201).json(toNegotiation(await op.reload()));
     } catch (error) {

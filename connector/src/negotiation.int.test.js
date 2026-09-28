@@ -44,7 +44,7 @@ run('negociación voluntaria (integración con Postgres)', () => {
     // Lo que crea la API de U10 (POST /api/negotiations): solo la intención, en 'requested'.
     async function requestManual(cycleId, direction, quantity, pricePerEnergy) {
         await pool.query(
-            "INSERT INTO pending_operations (idpk, cycle_id, direction, quantity, price_per_energy, status) VALUES ($1, $2, $3, $4, $5, 'requested')",
+            "INSERT INTO pending_operations (idpk, cycle_id, direction, quantity, price_per_energy, status, attempts) VALUES ($1, $2, $3, $4, $5, 'requested', 0)",
             [randomUUID(), cycleId, direction, quantity, pricePerEnergy],
         );
     }
@@ -81,7 +81,7 @@ run('negociación voluntaria (integración con Postgres)', () => {
     describe('estrategia automática', () => {
         test('excedente: give automático del excedente al tope; el sweeper lo publica con el idpk de la operación', async () => {
             await send(statusStatement('cycle-1'));
-            expect(await op()).toMatchObject({ origin: 'auto', status: 'requested', direction: 'give', quantity: '200', price_per_energy: '220.50' });
+            expect(await op()).toMatchObject({ origin: 'auto', status: 'requested', attempts: 0, direction: 'give', quantity: '200', price_per_energy: '220.50' });
 
             const now = new Date();
             await negotiation.tick(now);
@@ -150,7 +150,7 @@ run('negociación voluntaria (integración con Postgres)', () => {
             await requestManual('cycle-1', 'take', 10, 220.51);
             await negotiation.tick(new Date());
 
-            expect(await op()).toMatchObject({ status: 'rejected', failure_reason: 'PRICE_ABOVE_CAP' });
+            expect(await op()).toMatchObject({ status: 'rejected', failure_reason: 'PRICE_ABOVE_CAP', attempts: 0 });
             expect((await op()).failure_detail).toMatch(/220\.5/);
             expect(await sent('negotiation-proposal')).toHaveLength(0);
         });
