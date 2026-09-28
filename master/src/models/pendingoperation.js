@@ -16,7 +16,7 @@ module.exports = (sequelize, DataTypes) => {
     // U6 (ADR-003, addendum U6)
     origin: DataTypes.STRING(10),
     confirmation: DataTypes.JSONB,
-    confirmationMsgIds: DataTypes.ARRAY(DataTypes.UUID),
+    confirmations: DataTypes.JSONB,
     confirmedAt: DataTypes.DATE,
     paidAt: DataTypes.DATE,
     failureReason: DataTypes.STRING(40),

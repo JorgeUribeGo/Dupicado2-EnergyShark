@@ -132,18 +132,19 @@ async function lockByProposalMsgId(client, msgId) {
 
 async function lockByConfirmationMsgId(client, msgId) {
     const { rows } = await client.query(
-        'SELECT * FROM pending_operations WHERE $1 = ANY(confirmation_msg_ids) FOR UPDATE',
+        'SELECT * FROM pending_operations WHERE confirmations ? $1 FOR UPDATE',
         [msgId],
     );
     return rows[0] || null;
 }
 
-// Guarda la confirmación y suma su msgId a los que un pago puede nombrar. Con status (y expiresAt)
-// además cambia de estado; sin status solo registra una confirmación adicional.
+// Guarda la confirmación como la vigente y en confirmations bajo su msgId, que es lo que un pago
+// puede nombrar. Con status (y expiresAt) además cambia de estado; sin status solo registra una
+// confirmación adicional.
 async function recordConfirmation(client, id, confirmation, { now, status = null, expiresAt = null }) {
     await client.query(
         `UPDATE pending_operations
-         SET confirmation = $2, confirmation_msg_ids = array_append(confirmation_msg_ids, $3::uuid),
+         SET confirmation = $2, confirmations = confirmations || jsonb_build_object($3::text, $2::jsonb),
              confirmed_at = $4, updated_at = $4,
              status = COALESCE($5, status), expires_at = COALESCE($6, expires_at),
              failure_reason = CASE WHEN $5 IS NULL THEN failure_reason END,
@@ -154,12 +155,14 @@ async function recordConfirmation(client, id, confirmation, { now, status = null
 }
 
 // Un pago tardío puede llegar a una operación abandonada: al liquidarse deja de ser una falla.
-async function markSettled(client, id, now) {
+// confirmation: la que se pagó, si no es la vigente (un give pagado por una confirmación anterior).
+async function markSettled(client, id, now, confirmation = null) {
     await client.query(
         `UPDATE pending_operations
-         SET status = 'settled', paid_at = $2, updated_at = $2, failure_reason = NULL, failure_detail = NULL
+         SET status = 'settled', paid_at = $2, updated_at = $2, failure_reason = NULL, failure_detail = NULL,
+             confirmation = COALESCE($3, confirmation)
          WHERE id = $1`,
-        [id, now],
+        [id, now, confirmation],
     );
 }
 

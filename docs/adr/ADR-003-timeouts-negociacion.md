@@ -232,3 +232,10 @@ addendum de U10 dejaban abierto, y corrige dos puntos del flujo (7 y 11).
   sin `ack`. Una operación cuya confirmación ya estaba en la cola se reenvía una vez de más (mismo
   `idpk`). Es inofensivo por diseño: la confirmación reentregada liquida la operación y la del
   reenvío queda como `duplicate` sin pagar de nuevo (verificado de punta a punta con `kill -9`).
+
+**Nota posterior a la review de la PR #7 (2026-09-27, David).** Corrige el punto 2: un pago nombra
+(`becauseOf`) una confirmación concreta, que no tiene por qué ser la última. Tras un timeout de pago
+se reenvía la propuesta y la central puede confirmar de nuevo; si después paga la primera, liquidar
+con `confirmation` (la última) aplicaba la energía de otra confirmación. `confirmation_msg_ids` se
+reemplaza por `confirmations` (JSONB, cada confirmación recibida con su `msgId` como clave). El pago
+se liquida con la que nombra, y esa queda como `confirmation` de la operación ya `settled`.

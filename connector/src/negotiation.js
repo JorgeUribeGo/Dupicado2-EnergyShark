@@ -210,16 +210,19 @@ async function handlePayment(client, env, now) {
         return recordRejected(client, 'duplicate', env, null, `pago para op=${op.id} ya liquidada (idpk=${op.idpk}); no se aplica de nuevo`);
     }
 
-    const { energy, pricePerEnergy } = op.confirmation.data;
+    // La confirmación que el pago nombra, que no tiene por qué ser la última: tras un reenvío por
+    // timeout de pago puede llegar otra, y la central paga la que ejecutó.
+    const confirmation = op.confirmations[env.data.becauseOf];
+    const { energy, pricePerEnergy } = confirmation.data;
     const { amount } = await repo.paymentAmount(client, energy, pricePerEnergy);
     if (Number(amount) !== Number(env.data.quantity)) {
         console.warn(`[negociacion] pago de ${env.data.quantity} para energy=${energy} x ${pricePerEnergy} = ${Number(amount)} ${opLabel(op)}: se aplica lo recibido`);
     }
     const applied = await applyNegotiationEvent(client, {
         cycleId: op.cycle_id, type: 'give', idpk: op.idpk, msgId: env.msgId,
-        payload: { confirmation: op.confirmation, payment: env }, deltaBudget: env.data.quantity, deltaEnergy: -energy,
+        payload: { confirmation, payment: env }, deltaBudget: env.data.quantity, deltaEnergy: -energy,
     });
-    await repo.markSettled(client, op.id, now);
+    await repo.markSettled(client, op.id, now, confirmation);
     if (!applied) return recordRejected(client, 'duplicate', env, null, `give ya aplicado al ledger para idpk=${op.idpk}; no se aplica de nuevo`);
     console.log(`[negociacion] give PAGADO ${opLabel(op)} +${env.data.quantity} créditos, -${energy} kWh (tras ${op.attempts} envío(s))`);
     return null;

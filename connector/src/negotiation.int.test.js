@@ -190,7 +190,7 @@ run('negociación voluntaria (integración con Postgres)', () => {
             await send(fromCentral('transfer', 'cycle-1', { quantity: 5000 })); // fondos del ciclo
             const give = confirmation('give', proposal, { pricePerEnergy: 220.5 });
             await send(give);
-            expect(await op()).toMatchObject({ status: 'awaiting_payment', confirmation_msg_ids: [give.msgId] });
+            expect(await op()).toMatchObject({ status: 'awaiting_payment', confirmations: { [give.msgId]: expect.objectContaining({ msgId: give.msgId }) } });
 
             await send(payment(give, 44100)); // 200 × 220.5
             const o = await op();
@@ -301,6 +301,24 @@ run('negociación voluntaria (integración con Postgres)', () => {
             expect(await op()).toMatchObject({ status: 'settled' });
             expect(await events()).toHaveLength(1);
             expect(await rejected()).toEqual([expect.objectContaining({ kind: 'duplicate', msg_type: 'give' })]);
+        });
+
+        test('el pago se liquida con la confirmación que nombra su becauseOf, no con la última recibida', async () => {
+            const proposal = await publishedAutoGive();
+            const give1 = confirmation('give', proposal, { pricePerEnergy: 220.5 });
+            await send(give1);
+            await negotiation.tick(later(31)); // sin pago en 30 s: se reenvía
+            const [, retry] = await sent('negotiation-proposal');
+            const give2 = confirmation('give', retry, { energy: 150, pricePerEnergy: 220.5 });
+            await send(give2); // la central confirma el reenvío con otra energía
+            expect(await op()).toMatchObject({ status: 'awaiting_payment', confirmation: expect.objectContaining({ msgId: give2.msgId }) });
+
+            await send(payment(give1, 44100)); // pero paga la primera: 200 × 220.5
+            const [ev] = await events();
+            expect(ev).toMatchObject({ type: 'give', delta_budget: '44100', delta_energy: '-200' });
+            expect(ev.payload.confirmation.msgId).toBe(give1.msgId);
+            // La liquidada queda como la vigente: es la que expone la API (settledPricePerEnergy).
+            expect(await op()).toMatchObject({ status: 'settled', confirmation: expect.objectContaining({ msgId: give1.msgId }) });
         });
 
         test('attempts no se resetea al confirmar: una central que confirma y nunca paga no es un loop infinito', async () => {

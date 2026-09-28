@@ -43,12 +43,20 @@ module.exports = {
     await queryInterface.addIndex('outbox_messages', ['msg_id'], { name: 'outbox_msg_id_idx' });
   },
   async down(queryInterface, Sequelize) {
+    // 'awaiting_confirmation' (el estado de toda propuesta publicada) no cabe en VARCHAR(20): se aborta
+    // antes de tocar el esquema, en vez de fallar a medio camino con las columnas ya borradas.
+    const [[{ count }]] = await queryInterface.sequelize.query(
+      'SELECT count(*)::int AS count FROM pending_operations WHERE length(status) > 20',
+    );
+    if (count > 0) {
+      throw new Error(`no se puede revertir: ${count} fila(s) de pending_operations con un status de más de 20 `
+        + "caracteres ('awaiting_confirmation'). Bórralas o espera a que terminen antes de volver a VARCHAR(20).");
+    }
     await queryInterface.removeIndex('outbox_messages', 'outbox_msg_id_idx');
     await queryInterface.removeIndex('pending_operations', 'pending_ops_one_auto_per_cycle');
     for (const column of ['failure_detail', 'failure_reason', 'paid_at', 'confirmed_at', 'confirmation_msg_ids', 'confirmation', 'origin']) {
       await queryInterface.removeColumn('pending_operations', column);
     }
-    // Falla si alguna fila quedó en 'awaiting_confirmation': es justamente el valor que no cabía.
     await queryInterface.changeColumn('pending_operations', 'status', {
       type: Sequelize.STRING(20),
       allowNull: false,
