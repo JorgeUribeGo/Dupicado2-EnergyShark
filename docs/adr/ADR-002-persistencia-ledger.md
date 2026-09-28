@@ -153,3 +153,21 @@ Alcance: U4 aplica los `transfer` **sin** `becauseOf` (fondos del ciclo; `quanti
 de la multa, `penalty` es informativo y queda en `payload`). Los `transfer` con `becauseOf` son el
 pago de una negociación voluntaria y los aplica U6 con el `idpk` de `pending_operations`
 (ADR-003, paso 4) — U4 no los toca, para que no exista una segunda vía que los aplique dos veces.
+
+### Addendum 2 — idempotencia de `status-statement` (2026-09-27, Pedro)
+
+Escrito antes del arreglo, a partir de la revisión del PR #2. El addendum anterior (§2) detectaba
+un reenvío comparando solo con el `idpk` del **último** `status-statement`. Si llega una corrección
+(`idpk` nuevo) y después se reenvía el **primero**, su `idpk` ya no es el último: se aplicaba de
+nuevo y pisaba la corrección. Es la anomalía #1 de la demo.
+
+**Decisión:** tabla append-only `status_statements` (`idpk UNIQUE`, `cycle_id`, `msg_id`,
+`payload`, `received_at`) con **todos** los `status-statement` aplicados. Antes de actualizar
+`cycles.status_statement`, se inserta ahí con `ON CONFLICT (idpk) DO NOTHING`: si no se insertó,
+es un reenvío y va a `rejected_messages` como `duplicate`. `cycles.status_statement` sigue siendo
+"el último recibido".
+
+**Alternativa descartada:** un arreglo `status_statement_idpks UUID[]` en `cycles`. Resuelve lo
+mismo, pero la tabla deja además el historial completo de statements de cada ciclo, que es lo que
+pide AD2 (reconstruible y explicable), y reutiliza el mismo mecanismo `UNIQUE(idpk)` que
+`ledger_events`.
