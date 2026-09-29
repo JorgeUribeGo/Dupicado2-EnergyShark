@@ -8,6 +8,15 @@ module.exports = {
     await queryInterface.changeColumn('pending_operations', 'expires_at', { type: Sequelize.DATE, allowNull: true });
   },
   async down(queryInterface, Sequelize) {
+    // Una operación que nunca se publicó (requested, o rejected localmente desde U6) no tiene envío ni
+    // timer, y no hay valor honesto que ponerle: se aborta antes de tocar el esquema.
+    const [[{ count }]] = await queryInterface.sequelize.query(
+      'SELECT count(*)::int AS count FROM pending_operations WHERE last_msg_id IS NULL OR expires_at IS NULL',
+    );
+    if (count > 0) {
+      throw new Error(`no se puede revertir: ${count} fila(s) de pending_operations sin last_msg_id o expires_at `
+        + '(nunca publicadas). Bórralas o espera a que se publiquen antes de volver a NOT NULL.');
+    }
     await queryInterface.changeColumn('pending_operations', 'last_msg_id', { type: Sequelize.UUID, allowNull: false });
     await queryInterface.changeColumn('pending_operations', 'expires_at', { type: Sequelize.DATE, allowNull: false });
   },

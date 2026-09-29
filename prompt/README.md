@@ -28,3 +28,6 @@ en la rama.
 | Carpeta | Unidad | Rama / PR |
 |---|---|---|
 | `tarea-u2/` | U2 — ack/nack/error y outbox transaccional | `feat/u2-ack-outbox` (#5, apilado sobre `feat/u3-u4-u7-ledger`) |
+| `tarea-u5/` | U5 — scheduler del ciclo y `negotiation-report` | `feat/u5-scheduler-ciclo` (#6, apilado sobre U2) |
+| `tarea-fixes-robustez/` | Fixes: healthcheck, reconexión, prueba de anomalías, pool de `pg` y `.dockerignore` | `feat/u5-scheduler-ciclo` (#6) |
+| `tarea-u6/` | U6 — negociación voluntaria completa | `feat/u6-negociacion` (apilado sobre U5, con merge de U10) |

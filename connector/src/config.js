@@ -1,5 +1,19 @@
 require('dotenv').config();
 
+// Solo para pruebas locales: divide todas las duraciones del protocolo (con 60, un minuto del
+// protocolo dura un segundo). Nunca en producción: ahí las ventanas reales las fija la central.
+// Tiene que ser un número finito > 0: con -1 los timers quedan negativos y con Infinity en cero, y el
+// scheduler cerraría los ciclos al instante. Cualquier otro valor se ignora (escala 1).
+function parseTimeScale(raw) {
+    const value = Number(raw);
+    if (Number.isFinite(value) && value > 0) return value;
+    if (raw) console.warn(`[config] CYCLE_TIME_SCALE=${raw} no es un número positivo: se ignora (escala 1)`);
+    return 1;
+}
+const timeScale = parseTimeScale(process.env.CYCLE_TIME_SCALE);
+const MINUTE_MS = 60 * 1000;
+const scaled = (ms) => ms / timeScale;
+
 module.exports = {
     rabbitmq: {
         username: process.env.RABBITMQ_USERNAME,
@@ -42,5 +56,22 @@ module.exports = {
         batchSize: 50,
         // Espera antes de reabrir el canal de publicación si el broker lo cerró (p. ej. exchange inexistente).
         channelRetryMs: 5000,
+    },
+    // Duraciones del ciclo (enunciado §Sobre el presupuesto y §Sobre reportar a la central).
+    cycle: {
+        timeScale,
+        negotiationWindowMs: scaled(20 * MINUTE_MS),
+        reportLeadMs: scaled(5 * MINUTE_MS), // periodo de cierre: el reporte se acepta en los últimos 5 min
+        consumptionMs: scaled(120 * MINUTE_MS),
+    },
+    scheduler: {
+        tickMs: scaled(30 * 1000),
+    },
+    // Negociación voluntaria (ADR-003 + addendum U6): la central confirma dentro de 30 s y, en un
+    // give, paga dentro de otros 30 s. MAX_ATTEMPTS cuenta envíos de la propuesta en toda su vida.
+    negotiation: {
+        timeoutMs: scaled(30 * 1000),
+        sweeperTickMs: scaled(5 * 1000),
+        maxAttempts: 5,
     },
 };

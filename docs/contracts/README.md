@@ -46,6 +46,9 @@ una línea en `schemas/messages/distance-table.schema.json` — pero no lo den p
 | IDPK_EQUALS_MSGID  | 422  |
 | IDENTITY_MISMATCH  | 403  |
 
+`PRICE_ABOVE_CAP` (422) también se acepta como NACK: el enunciado dice que viaja como `error`, pero su
+propio ejemplo lo muestra con `"type": "nack"`. El connector trata ambos igual (ADR-003, addendum U6 §10).
+
 ## Tabla error — rechazo de OPERACIÓN (siempre precedido de `ack`)
 
 | reason           | code | Cuándo                                    |
@@ -54,6 +57,7 @@ una línea en `schemas/messages/distance-table.schema.json` — pero no lo den p
 | CYCLE_EXPIRED    | 410  | la ventana de negociación de ese ciclo ya cerró |
 | PRICE_ABOVE_CAP  | 422  | el precio ofertado supera el tope del ciclo |
 | OVER_CAPACITY    | 409  | el `give` excede la energía vendible restante |
+| REPORT_TOO_EARLY | 425  | el `negotiation-report` llegó antes de que abriera el periodo de cierre; trae `data.opensAt` (el enunciado también lo llama 422 en un párrafo: se aceptan ambos) |
 
 ## Regla rápida NACK vs error
 
