@@ -27,7 +27,7 @@ run('ledgerRepo (integración con Postgres)', () => {
         pool = require('./pool');
         ({ applyToLedger, getCycleBalances } = require('./ledgerRepo'));
     });
-    beforeEach(() => pool.query('TRUNCATE ledger_events, status_statements, cycles, rejected_messages'));
+    beforeEach(() => pool.query('TRUNCATE ledger_events, status_statements, cycles, rejected_messages, distance_tables'));
     afterAll(() => pool.end());
 
     test('status-statement fija ventanas del ciclo sin crear evento de ledger', async () => {
@@ -123,8 +123,19 @@ run('ledgerRepo (integración con Postgres)', () => {
         expect(Number(ev[19].resulting_budget)).toBe(100);
     });
 
-    test('tipos que no tocan el ledger se ignoran', async () => {
-        expect(await applyToLedger(env('distance-table', undefined, {}))).toEqual({ result: 'ignored' });
+    test('tipos sin applier se ignoran', async () => {
+        expect(await applyToLedger(env('request', undefined, { ask: 'x' }))).toEqual({ result: 'ignored' });
+    });
+
+    test('distance-table: se guarda sin tocar el ledger; el reenvío queda como duplicado (U8)', async () => {
+        const table = { ...env('distance-table', undefined, { distances: { HGW: { distance: 62763183, transportCost: 0.0034, enabled: true } } }), cityId: 'COR' };
+        expect(await applyToLedger(table)).toEqual({ result: 'applied' });
+        expect(await applyToLedger({ ...table, msgId: randomUUID() })).toEqual({ result: 'duplicate' });
+
+        const { rows } = await pool.query('SELECT * FROM distance_tables');
+        expect(rows).toEqual([expect.objectContaining({ idpk: table.idpk, city_id: 'COR', payload: table })]);
+        expect(await events()).toHaveLength(0);
+        expect(await rejected()).toEqual([expect.objectContaining({ kind: 'duplicate', msg_type: 'distance-table', idpk: table.idpk })]);
     });
 
     test('getCycleBalances: budget global + (generación - consumo) + movimientos del ciclo', async () => {

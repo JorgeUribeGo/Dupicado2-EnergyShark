@@ -121,7 +121,7 @@ describe('startConsuming (consumer.js)', () => {
         expect(enqueueAck).toHaveBeenCalledWith(txClient, body.msgId);
     });
 
-    test('tipos que el ledger ignora (p. ej. distance-table) también reciben ack', async () => {
+    test('tipos que el ledger ignora también reciben ack', async () => {
         applyToLedger.mockResolvedValue({ result: 'ignored' });
         const body = fromCentral('distance-table', { distances: {} }, { cityId: 'TEST' });
         await consumeCallback(buildFakeMsg(body, { routingKey: 'city.broadcast' }));
