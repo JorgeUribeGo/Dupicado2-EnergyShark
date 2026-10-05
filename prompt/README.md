@@ -15,9 +15,11 @@ sesión (sin subagentes). El texto en "Prompt utilizado" de cada archivo es lite
 | `tarea-u4-u7/` | U4 + U7 — aplicar mensajes al ledger | `feat/u3-u4-u7-ledger` |
 | `tarea-u9/` | U9 — endpoints REST de lectura | `feat/u9-endpoints-lectura` (apilado sobre el anterior) |
 | `tarea-u10/` | U10 — negociaciones manuales, lado api (opción A) | `feat/u10-negociacion-manual` (apilado sobre U9) |
+| `tarea-u8-u9-distance-table/` | U8 + U9 — `distance-table`: persistencia y `GET /api/distance-table` (RF02) | `feat/u8-u9-distance-table` |
 
-Tareas **no** ejecutadas: el sweeper de filas `requested` (parte de U6, David) y el
-endpoint `GET /api/distance-table` de U9 (depende del U8 de Esteban).
+El sweeper de filas `requested` lo hizo David en U6. `GET /api/distance-table` se hizo el
+2026-10-05 junto con U8 (que estaba asignado a Esteban y quedó sin hacer), en una sesión aparte
+con el mismo formato.
 
 ## David
 
