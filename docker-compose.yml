@@ -1,3 +1,12 @@
+# Local: `docker compose up --build` construye las imágenes. Producción (EC2): las imágenes vienen de
+# ECR (`scripts/ecr-push.sh`) y se levantan con `docker compose pull && docker compose up -d --no-build`
+# (docs/deploy.md). ECR_REGISTRY e IMAGE_TAG van en el .env de la raíz.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   db:
     image: postgres:16-alpine
@@ -13,10 +22,12 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    logging: *logging
     networks:
       - energyshark-net
 
   master1:
+    image: ${ECR_REGISTRY:-energyshark}/energyshark-master:${IMAGE_TAG:-latest}
     build:
       context: ./master
     restart: unless-stopped
@@ -24,32 +35,35 @@ services:
       - ./master/.env
     environment:
       DB_HOST: db
+    # Solo hacia el host: Nginx (nativo en el EC2) es el único que entra a master.
     ports:
-      - "3001:3000"
+      - "127.0.0.1:3001:3000"
     depends_on:
       db:
         condition: service_healthy
+    logging: *logging
     networks:
       - energyshark-net
 
+  # Misma imagen que master1 (sin build propio: se construye una vez).
   master2:
-    build:
-      context: ./master
+    image: ${ECR_REGISTRY:-energyshark}/energyshark-master:${IMAGE_TAG:-latest}
     restart: unless-stopped
     env_file:
       - ./master/.env
     environment:
       DB_HOST: db
     ports:
-      - "3002:3000"
+      - "127.0.0.1:3002:3000"
     depends_on:
       master1:
         condition: service_healthy
+    logging: *logging
     networks:
       - energyshark-net
 
-
   connector:
+    image: ${ECR_REGISTRY:-energyshark}/energyshark-connector:${IMAGE_TAG:-latest}
     build:
       context: .
       dockerfile: connector/Dockerfile
@@ -61,6 +75,7 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    logging: *logging
     networks:
       - energyshark-net
 
