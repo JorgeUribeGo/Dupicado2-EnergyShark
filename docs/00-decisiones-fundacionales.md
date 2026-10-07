@@ -188,6 +188,20 @@ sobrecargar el mecanismo.
 **Fuera de alcance:** el `request` de `distance-table` (#13/#14, PR #20). Se suma con la misma
 función cuando ese PR esté en `main`.
 
+### Addendum 2 — un solo `request` pendiente (2026-10-07, Pedro)
+
+Escrito antes del arreglo, a partir del testeo de punta a punta (`docs/reporte-testeo.md`, B1). El
+punto 2 del addendum anterior limita a un `request` cada 5 min, pero lo encolado **se acumula** si el
+broker no publica: al volver salen todos juntos (27 de golpe en el ensayo con la escala de 60; en
+producción, un corte de 1 h serían unos 12). Eso es lo que el enunciado pide evitar ("no sobrecargar
+este mecanismo").
+
+**Decisión:** antes de encolar, si ya hay un `request` con el mismo `ask` en `outbox_messages` con
+`status = 'pending'`, no se encola otro. El throttle de 5 min se mantiene para cuando sí se publica.
+
+**Alternativa descartada:** borrar los pendientes viejos al encolar uno nuevo. Logra lo mismo, pero
+borrar filas del outbox rompe su lectura como historial ("nunca se borra, se marca `sent`").
+
 ---
 
 ## 4. Estrategia de generación de `idpk`
