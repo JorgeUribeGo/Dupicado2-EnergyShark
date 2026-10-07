@@ -149,6 +149,32 @@ Escrito **antes** del código de U5 (RDOC01). No cambia la decisión (estado en 
    protocolo dura un segundo. Solo para pruebas locales contra una "central" simulada: las ventanas
    de los ciclos reales las fija el `validUntil` que manda la central.
 
+### Addendum — `request` de `status-statement` faltante (#19, 2026-10-05, Pedro por David)
+
+Escrito antes del código. RF03/G03 exigen aplicar el `status-statement` de todos los ciclos; si se
+pierde, el nodo no tiene ventana ni puede reportar. El enunciado (§Peticiones directas) permite
+pedirlo con `{"type": "request", "data": {"ask": "status-statement"}}`, sin `cycleId`, y pide no
+sobrecargar el mecanismo.
+
+1. **Cuándo falta.** En cada tick del scheduler, falta si se cumple alguna:
+   - **Ciclo huérfano:** existe un ciclo sin `status_statement` (lo nombró un `transfer` o un
+     `demand-statement`) creado hace más de un margen (`grace`, 2 min) y hace menos de un ciclo
+     completo (20 min + 2 h). El margen evita pedirlo cuando solo llegó un poco después; el tope,
+     pedir para siempre el de un ciclo que ya pasó.
+   - **Sin ciclo vigente:** ningún ciclo con `status_statement` sigue en curso
+     (`window_closes_at + 2 h + grace > now`). Cubre el arranque con la base vacía y el caso en que
+     termina el consumo y no llega el siguiente ciclo.
+2. **Cuánto.** A lo más un `request` cada 5 min (`interval`). El estado del throttle vive en memoria:
+   tras un reinicio sale uno de inmediato, que es justo lo que conviene. Si el reloj retrocede, no se
+   bloquea.
+3. **Cómo.** Por el outbox (ADR-001), como cualquier mensaje propio: si el broker está caído, sale al
+   volver. La respuesta de la central es un `status-statement` normal: si ya lo teníamos, queda como
+   `duplicate` (ADR-002, addendum 2) y no se re-aplica.
+4. `grace` e `interval` se escalan con `CYCLE_TIME_SCALE` como el resto de las duraciones.
+
+**Fuera de alcance:** el `request` de `distance-table` (#13/#14, PR #20). Se suma con la misma
+función cuando ese PR esté en `main`.
+
 ---
 
 ## 4. Estrategia de generación de `idpk`

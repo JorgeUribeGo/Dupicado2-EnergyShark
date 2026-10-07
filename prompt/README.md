@@ -33,3 +33,4 @@ en la rama.
 | `tarea-u5/` | U5 — scheduler del ciclo y `negotiation-report` | `feat/u5-scheduler-ciclo` (#6, apilado sobre U2) |
 | `tarea-fixes-robustez/` | Fixes: healthcheck, reconexión, prueba de anomalías, pool de `pg` y `.dockerignore` | `feat/u5-scheduler-ciclo` (#6) |
 | `tarea-u6/` | U6 — negociación voluntaria completa | `feat/u6-negociacion` (apilado sobre U5, con merge de U10) |
+| `tarea-request-status/` | #19 — `request` de `status-statement` faltante (hecho por Pedro con autorización de David) | `feat/request-status-statement` |

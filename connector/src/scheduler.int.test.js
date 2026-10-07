@@ -241,4 +241,43 @@ run('scheduler del ciclo (integración con Postgres, tiempo simulado)', () => {
         expect((await cycle('cycle-1')).phase).toBe('closed');
         expect((await cycle('cycle-2')).phase).toBe('consuming');
     });
+    describe('request de status-statement faltante (#19)', () => {
+        const requests = async () => (await pool.query("SELECT payload FROM outbox_messages WHERE type = 'request' ORDER BY id")).rows.map((r) => r.payload);
+        // grace 2 min; un ciclo completo dura 20 min + 2 h.
+        const opts = { graceMs: 2 * 60e3, cycleMs: 140 * 60e3, consumptionMs: 120 * 60e3 };
+        let isStatusStatementMissing;
+        let requestStatusIfMissing;
+        beforeAll(() => {
+            ({ isStatusStatementMissing } = require('./db/cyclesRepo'));
+            ({ requestStatusIfMissing } = require('./scheduler'));
+        });
+
+        test('sin ningún ciclo se pide, a lo más uno cada 5 min, sin cycleId', async () => {
+            const t0 = new Date('2030-01-01T00:00:00Z');
+            const plus = (min) => new Date(t0.getTime() + min * 60e3);
+            expect(await requestStatusIfMissing(t0)).toBe(true);
+            expect(await requestStatusIfMissing(plus(1))).toBe(false);
+            expect(await requestStatusIfMissing(plus(5))).toBe(true);
+
+            const sent = await requests();
+            expect(sent).toHaveLength(2);
+            expect(sent[0]).toMatchObject({ type: 'request', cityId: 'TEST', data: { ask: 'status-statement' } });
+            expect(sent[0]).not.toHaveProperty('cycleId');
+        });
+
+        test('con un ciclo en curso no falta; al terminar su consumo + grace, sí', async () => {
+            await openCycle1(); // ventana cierra a los 20 min, consumo hasta los 140
+            expect(await isStatusStatementMissing(at(10), opts)).toBe(false);
+            expect(await isStatusStatementMissing(at(141), opts)).toBe(false);
+            expect(await isStatusStatementMissing(at(142), opts)).toBe(true);
+        });
+
+        test('ciclo nombrado por un transfer sin su status-statement: falta pasado el grace', async () => {
+            await openCycle1();
+            await applyToLedger(transfer('cycle-2', 10));
+            await pool.query("UPDATE cycles SET created_at = $1 WHERE cycle_id = 'cycle-2'", [at(100)]);
+            expect(await isStatusStatementMissing(at(101), opts)).toBe(false);
+            expect(await isStatusStatementMissing(at(102), opts)).toBe(true);
+        });
+    });
 });

@@ -58,4 +58,20 @@ async function advancePhases(now, consumptionMs, db = pool) {
     return { consuming, closed: closed.map((r) => r.cycle_id) };
 }
 
-module.exports = { findInClosingPeriod, lockForReport, saveReport, rescheduleReport, advancePhases };
+// ¿Hay que pedir el status-statement? (addendum #19). Huérfano: ciclo nombrado por un transfer o
+// demand-statement que lleva más de `grace` sin statement (y menos de un ciclo completo, para no pedir
+// para siempre uno pasado). Sin ciclo vigente: ninguno con statement sigue en curso.
+async function isStatusStatementMissing(now, { graceMs, cycleMs, consumptionMs }, db = pool) {
+    const { rows: [r] } = await db.query(
+        `SELECT
+            EXISTS (SELECT 1 FROM cycles WHERE status_statement IS NULL
+                      AND created_at <= $1::timestamptz - make_interval(secs => $2)
+                      AND created_at >  $1::timestamptz - make_interval(secs => $3)) AS orphan,
+            NOT EXISTS (SELECT 1 FROM cycles WHERE status_statement IS NOT NULL
+                      AND window_closes_at + make_interval(secs => $4 + $2) > $1) AS idle`,
+        [now, graceMs / 1000, cycleMs / 1000, consumptionMs / 1000],
+    );
+    return r.orphan || r.idle;
+}
+
+module.exports = { findInClosingPeriod, lockForReport, saveReport, rescheduleReport, advancePhases, isStatusStatementMissing };

@@ -67,6 +67,12 @@ module.exports = {
     scheduler: {
         tickMs: scaled(30 * 1000),
     },
+    // request de status-statement faltante (decisiones fundacionales §3, addendum #19). ponytail:
+    // valores a ojo; ajustar si la central publica su cadencia real de ciclos.
+    statusRequest: {
+        graceMs: scaled(2 * MINUTE_MS),
+        intervalMs: scaled(5 * MINUTE_MS),
+    },
     // Negociación voluntaria (ADR-003 + addendum U6): la central confirma dentro de 30 s y, en un
     // give, paga dentro de otros 30 s. MAX_ATTEMPTS cuenta envíos de la propuesta en toda su vida.
     negotiation: {
