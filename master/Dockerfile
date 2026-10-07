@@ -13,6 +13,9 @@ ENV NODE_ENV=production
 # Agente New Relic (solo si hay NEW_RELIC_LICENSE_KEY): su log a stdout (docker logs), no a un archivo
 # que crece dentro del contenedor.
 ENV NEW_RELIC_LOG=stdout NEW_RELIC_LOG_LEVEL=warn
+# El HEALTHCHECK de Docker pega a /health cada 30 s en cada réplica: sin esto domina el APM y tapa las
+# rutas reales (docs/monitoreo.md).
+ENV NEW_RELIC_IGNORING_RULES=^/health$
 
 EXPOSE 3000
 

@@ -6,6 +6,9 @@ x-logging: &logging
   options:
     max-size: "10m"
     max-file: "3"
+    # Cada línea del log lleva attrs.com.docker.compose.service (connector, master1, ...): con eso se
+    # filtra por servicio en New Relic Logs, que lee estos archivos (docs/monitoreo.md).
+    labels: "com.docker.compose.service"
 
 services:
   db:
