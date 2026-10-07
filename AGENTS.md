@@ -21,6 +21,9 @@ Relic (APM + infraestructura), AWS Budgets.
 
 ## Arquitectura del backend
 
+Diagrama de componentes: `docs/arquitectura.md`.
+
+
 - `connector/`: consume el broker, valida el envelope, aplica al ledger, responde ack/nack/error por
   un **outbox transaccional**, corre el scheduler del ciclo y el sweeper de negociaciones. No expone HTTP.
 - `master/`: API REST de solo lectura más `POST /api/negotiations`, dos réplicas (`master1`,
@@ -68,7 +71,7 @@ Decisiones (léelas antes de cambiar comportamiento):
 
 ```bash
 cp .env.example .env; cp master/.env.example master/.env; cp connector/.env.example connector/.env
-docker compose up --build
+docker compose up --build    # sin AUTH0_*: NODE_ENV=development en master/.env (ver Seguridad)
 ```
 
 Tests:
@@ -83,5 +86,10 @@ cd connector && LEDGER_INT_TEST=1 DB_HOST=localhost DB_NAME=<base de prueba> npm
 
 ## Seguridad
 
-Nunca commitear `.env`, `.pem`, licencias ni tokens. Los secretos van en el `.env` del EC2. Las
-rutas de la API no validan JWT por sí mismas: lo hace el API Gateway.
+Nunca commitear `.env`, `.pem`, licencias ni tokens. Los secretos van en el `.env` del EC2.
+
+El JWT de Auth0 se valida **dos veces**: en el API Gateway y en `master` (`express-oauth2-jwt-bearer`,
+todas las rutas menos `/health`). La segunda es necesaria porque `tiburonshark.me` llega a master
+sin pasar por el Gateway (decisiones fundacionales §1, addendum #15). En producción, master no arranca
+sin `AUTH0_ISSUER_BASE_URL` y `AUTH0_AUDIENCE`; en local, `NODE_ENV=development` en `master/.env` lo
+deja correr sin auth.
