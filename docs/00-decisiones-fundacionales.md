@@ -59,6 +59,19 @@ la vez, cada pieza de código que no hay que escribir reduce riesgo real.
    CloudFront del frontend (no `*`), `AllowMethods` según los verbos usados (`GET`, `POST`),
    `AllowHeaders` incluyendo `Authorization`.
 
+### Addendum — middleware JWT en `master` (#15 / U11, 2026-10-06, Pedro con visto bueno de Esteban y Jorge)
+
+Escrito antes del código. Motivo concreto del punto 5: `https://tiburonshark.me/api/*` llega a `master`
+por Nginx **sin pasar por el Gateway** y responde sin token. También queda abierto `POST /events`, el
+endpoint de escritura de la E0.
+
+1. `express-oauth2-jwt-bearer` en `master` con `AUTH0_ISSUER_BASE_URL` (`https://<TENANT>.auth0.com/`)
+   y `AUTH0_AUDIENCE`, los mismos valores que el JWT authorizer del Gateway. El Gateway reenvía el
+   header `Authorization`, así que por `api.tiburonshark.me` no cambia nada.
+2. Protege **todas** las rutas excepto `GET /health` (healthcheck de Docker y de Nginx).
+3. **Falla cerrado:** con `NODE_ENV=production` (lo fija la imagen), si faltan las variables `master`
+   no arranca. En local sin variables corre sin auth y lo avisa en el log.
+
 ---
 
 ## 2. Stack tecnológico
