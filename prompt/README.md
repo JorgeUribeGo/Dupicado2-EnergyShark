@@ -20,7 +20,7 @@ sesión (sin subagentes). El texto en "Prompt utilizado" de cada archivo es lite
 | `tarea-agents-md/` | #18 — `AGENTS.md` compartido y plantilla de AI logs | `docs/agents-md` (#23) |
 | `tarea-jwt-master/` | #15 / U11 — middleware JWT en `master` (con visto bueno de Esteban y Jorge) | `feat/jwt-master` (#24, apilado sobre #22) |
 | `tarea-compose-ecr/` | #16 / I2 — compose con imágenes de ECR y puertos cerrados (con visto bueno de Jorge) | `feat/compose-ecr` (#25) |
-| `tarea-readme-uml/` | #17 — README del backend, diagrama de componentes UML y `AGENTS.md` al día (tomado de Esteban, con aviso) | `docs/readme-uml` |
+| `tarea-agents-md-fix/` | `AGENTS.md` al día con #24 (doble validación del JWT, auth en local) y tabla de `prompt/README.md` ordenada | `docs/readme-uml` |
 | `tarea-demo-anomalias/` | Ensayo de las anomalías 1–4 sobre `main` y guía de la demo | `docs/demo-anomalias` (apilado sobre `docs/readme-uml`) |
 
 El sweeper de filas `requested` lo hizo David en U6. Desde #20, las filas corresponden a una segunda
