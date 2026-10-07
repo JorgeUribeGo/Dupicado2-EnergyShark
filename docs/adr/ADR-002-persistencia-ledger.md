@@ -171,3 +171,28 @@ es un reenvío y va a `rejected_messages` como `duplicate`. `cycles.status_state
 mismo, pero la tabla deja además el historial completo de statements de cada ciclo, que es lo que
 pide AD2 (reconstruible y explicable), y reutiliza el mismo mecanismo `UNIQUE(idpk)` que
 `ledger_events`.
+
+### Addendum 3 — `distance-table` (U8 + U9, 2026-10-05, Pedro)
+
+Escrito antes del código. RF02 pide ver la `distance-table` **vigente**; el enunciado dice que la
+central la reenvía "cada cierto tiempo" con valores nuevos y que en la E1 solo se recibe, se
+persiste y se visualiza. No toca budget ni energía, así que no genera filas en `ledger_events`.
+
+**Decisión:** tabla append-only `distance_tables` (`idpk UNIQUE`, `msg_id`, `city_id`, `sent_at`
+= `timestamp` del envelope, `payload` JSONB, `received_at`), mismo patrón que `status_statements`:
+
+1. El connector inserta con `ON CONFLICT (idpk) DO NOTHING`; si no se insertó es un reenvío y va a
+   `rejected_messages` como `duplicate` (RF05). Se responde `ack` igual que la primera vez.
+2. La tabla **vigente** es la de `sent_at` más reciente, no la última en llegar: con `prefetch(8)`
+   y reentregas, una tabla vieja puede llegar después de una nueva y no debe pisarla. Empate →
+   `id` mayor.
+3. `GET /api/distance-table` devuelve esa fila con el shape `DistanceTable` de `openapi.yaml`
+   (`updatedAt` = `sent_at`). Sin ninguna tabla recibida responde `200` con `distances: {}` y
+   `updatedAt: null`, para que la vista muestre "sin datos" en vez de un error.
+
+**Alternativa descartada:** una sola fila que se sobrescribe. Pierde el historial (AD2) y no
+distingue un reenvío (duplicado, RF05) de una tabla nueva con los mismos valores.
+
+**Fuera de alcance:** pedir la tabla con un `request` (`ask: distance-table`) si no llegó ninguna.
+Es la misma mecánica que el `request` de `status-statement` (pendiente P6, David); se puede sumar
+ahí.

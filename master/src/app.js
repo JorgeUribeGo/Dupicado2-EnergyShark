@@ -4,6 +4,7 @@ const historyRouter = require('./routes/history');
 const cyclesRouter = require('./routes/cycles');
 const messagesRouter = require('./routes/messages');
 const negotiationsRouter = require('./routes/negotiations');
+const distanceTableRouter = require('./routes/distanceTable');
 
 const app = express();
 
@@ -13,6 +14,7 @@ app.use('/history', historyRouter);
 app.use('/api/cycles', cyclesRouter);
 app.use('/api/messages', messagesRouter);
 app.use('/api/negotiations', negotiationsRouter);
+app.use('/api/distance-table', distanceTableRouter);
 
 app.get('/health', (req, res) => res.status(200).send('ok'));
 

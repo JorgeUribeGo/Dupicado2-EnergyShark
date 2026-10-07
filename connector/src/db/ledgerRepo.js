@@ -100,10 +100,28 @@ function applyDemandStatement(client, env) {
     return insertEvent(client, env, { budgetFactorA: -quantity, budgetFactorB: valuePerKwh, deltaEnergy: quantity });
 }
 
+// U8: no toca budget ni energía; queda en el historial distance_tables y la vigente es la de
+// timestamp más reciente (ADR-002, addendum 3). Mismo idpk = reenvío, duplicado (RF05).
+async function applyDistanceTable(client, env) {
+    const { rowCount } = await client.query(
+        `INSERT INTO distance_tables (idpk, msg_id, city_id, sent_at, payload) VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (idpk) DO NOTHING`,
+        [env.idpk, env.msgId, env.cityId ?? null, env.timestamp, env],
+    );
+    if (rowCount === 0) {
+        await insertRejected({
+            kind: 'duplicate', msgType: env.type, idpk: env.idpk, msgId: env.msgId, detail: 'idpk de distance-table ya recibido',
+        }, client);
+        return { result: 'duplicate' };
+    }
+    return { result: 'applied' };
+}
+
 const APPLIERS = {
     'status-statement': applyStatusStatement,
     transfer: applyTransfer,
     'demand-statement': applyDemandStatement,
+    'distance-table': applyDistanceTable,
 };
 
 // Punto de entrada desde consumer.js para un envelope ya validado. Tipos que no tocan el ledger

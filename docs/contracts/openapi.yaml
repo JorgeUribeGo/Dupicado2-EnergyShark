@@ -111,8 +111,8 @@ components:
     DistanceTable:
       type: object
       properties:
-        cityId: { type: string }
-        updatedAt: { type: string, format: date-time }
+        cityId: { type: string, nullable: true }
+        updatedAt: { type: string, format: date-time, nullable: true, description: "timestamp del envelope de la central; null si aún no llega ninguna tabla." }
         distances:
           type: object
           additionalProperties:
@@ -192,6 +192,9 @@ paths:
   /api/distance-table:
     get:
       summary: Tabla de conectividad vigente (RF02)
+      description: >
+        La de timestamp más reciente, no la última en llegar (ADR-002, addendum 3). Sin ninguna
+        tabla recibida responde 200 con distances vacío y updatedAt null.
       responses:
         "200":
           description: Tabla actual
