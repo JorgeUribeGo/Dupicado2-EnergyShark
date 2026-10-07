@@ -21,6 +21,7 @@ sesión (sin subagentes). El texto en "Prompt utilizado" de cada archivo es lite
 | `tarea-jwt-master/` | #15 / U11 — middleware JWT en `master` (con visto bueno de Esteban y Jorge) | `feat/jwt-master` (#24, apilado sobre #22) |
 | `tarea-compose-ecr/` | #16 / I2 — compose con imágenes de ECR y puertos cerrados (con visto bueno de Jorge) | `feat/compose-ecr` (#25) |
 | `tarea-readme-uml/` | #17 — README del backend, diagrama de componentes UML y `AGENTS.md` al día (tomado de Esteban, con aviso) | `docs/readme-uml` |
+| `tarea-demo-anomalias/` | Ensayo de las anomalías 1–4 sobre `main` y guía de la demo | `docs/demo-anomalias` (apilado sobre `docs/readme-uml`) |
 
 El sweeper de filas `requested` lo hizo David en U6. Desde #20, las filas corresponden a una segunda
 sesión (2026-10-05 al 07, mismo formato): U8 (estaba asignado a Esteban y quedó sin hacer) y las
