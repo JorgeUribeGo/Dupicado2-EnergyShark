@@ -11,19 +11,22 @@ sesión (sin subagentes). El texto en "Prompt utilizado" de cada archivo es lite
 
 | Carpeta | Unidad | Rama / PR |
 |---|---|---|
-| `tarea-compose-ecr/` | #16 / I2 — compose con imágenes de ECR y puertos cerrados (con visto bueno de Jorge) | `feat/compose-ecr` |
-| `tarea-u3/` | U3 — migraciones y modelos | `feat/u3-u4-u7-ledger` |
-| `tarea-newrelic/` | #10 — APM de New Relic en `master` (parte de código; el despliegue es de Jorge) | `feat/newrelic-apm` |
-| `tarea-u4-u7/` | U4 + U7 — aplicar mensajes al ledger | `feat/u3-u4-u7-ledger` |
-| `tarea-agents-md/` | #18 — `AGENTS.md` compartido y plantilla de AI logs | `docs/agents-md` |
-| `tarea-u9/` | U9 — endpoints REST de lectura | `feat/u9-endpoints-lectura` (apilado sobre el anterior) |
-| `tarea-jwt-master/` | #15 / U11 — middleware JWT en `master` (con visto bueno de Esteban y Jorge) | `feat/jwt-master` |
-| `tarea-u10/` | U10 — negociaciones manuales, lado api (opción A) | `feat/u10-negociacion-manual` (apilado sobre U9) |
-| `tarea-u8-u9-distance-table/` | U8 + U9 — `distance-table`: persistencia y `GET /api/distance-table` (RF02) | `feat/u8-u9-distance-table` |
+| `tarea-u3/` | U3 — migraciones y modelos | `feat/u3-u4-u7-ledger` (#2) |
+| `tarea-u4-u7/` | U4 + U7 — aplicar mensajes al ledger | `feat/u3-u4-u7-ledger` (#2) |
+| `tarea-u9/` | U9 — endpoints REST de lectura | `feat/u9-endpoints-lectura` (#3, apilado sobre el anterior) |
+| `tarea-u10/` | U10 — negociaciones manuales, lado api (opción A) | `feat/u10-negociacion-manual` (#4, apilado sobre U9) |
+| `tarea-u8-u9-distance-table/` | U8 + U9 — `distance-table`: persistencia y `GET /api/distance-table` (RF02) | `feat/u8-u9-distance-table` (#20) |
+| `tarea-newrelic/` | #10 — APM de New Relic en `master` (parte de código; el despliegue es de Jorge) | `feat/newrelic-apm` (#22) |
+| `tarea-agents-md/` | #18 — `AGENTS.md` compartido y plantilla de AI logs | `docs/agents-md` (#23) |
+| `tarea-jwt-master/` | #15 / U11 — middleware JWT en `master` (con visto bueno de Esteban y Jorge) | `feat/jwt-master` (#24, apilado sobre #22) |
+| `tarea-compose-ecr/` | #16 / I2 — compose con imágenes de ECR y puertos cerrados (con visto bueno de Jorge) | `feat/compose-ecr` (#25) |
+| `tarea-readme-uml/` | #17 — README del backend, diagrama de componentes UML y `AGENTS.md` al día (tomado de Esteban, con aviso) | `docs/readme-uml` |
 
-El sweeper de filas `requested` lo hizo David en U6. `GET /api/distance-table` se hizo el
-2026-10-05 junto con U8 (que estaba asignado a Esteban y quedó sin hacer), en una sesión aparte
-con el mismo formato.
+El sweeper de filas `requested` lo hizo David en U6. Desde #20, las filas corresponden a una segunda
+sesión (2026-10-05 al 07, mismo formato): U8 (estaba asignado a Esteban y quedó sin hacer) y las
+partes de código de issues de Jorge, Esteban y David, con su visto bueno. #20–#25 se mergearon juntos
+tras un ensayo local con los seis combinados (tests, migraciones desde cero, `docker compose build` y
+el stack levantado en Docker).
 
 ## David
 
@@ -37,4 +40,4 @@ en la rama.
 | `tarea-u5/` | U5 — scheduler del ciclo y `negotiation-report` | `feat/u5-scheduler-ciclo` (#6, apilado sobre U2) |
 | `tarea-fixes-robustez/` | Fixes: healthcheck, reconexión, prueba de anomalías, pool de `pg` y `.dockerignore` | `feat/u5-scheduler-ciclo` (#6) |
 | `tarea-u6/` | U6 — negociación voluntaria completa | `feat/u6-negociacion` (apilado sobre U5, con merge de U10) |
-| `tarea-request-status/` | #19 — `request` de `status-statement` faltante (hecho por Pedro con autorización de David) | `feat/request-status-statement` |
+| `tarea-request-status/` | #19 — `request` de `status-statement` faltante (hecho por Pedro con autorización de David) | `feat/request-status-statement` (#21) |
