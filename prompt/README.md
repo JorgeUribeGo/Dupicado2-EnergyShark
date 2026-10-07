@@ -15,6 +15,7 @@ sesión (sin subagentes). El texto en "Prompt utilizado" de cada archivo es lite
 | `tarea-u3/` | U3 — migraciones y modelos | `feat/u3-u4-u7-ledger` |
 | `tarea-newrelic/` | #10 — APM de New Relic en `master` (parte de código; el despliegue es de Jorge) | `feat/newrelic-apm` |
 | `tarea-u4-u7/` | U4 + U7 — aplicar mensajes al ledger | `feat/u3-u4-u7-ledger` |
+| `tarea-agents-md/` | #18 — `AGENTS.md` compartido y plantilla de AI logs | `docs/agents-md` |
 | `tarea-u9/` | U9 — endpoints REST de lectura | `feat/u9-endpoints-lectura` (apilado sobre el anterior) |
 | `tarea-jwt-master/` | #15 / U11 — middleware JWT en `master` (con visto bueno de Esteban y Jorge) | `feat/jwt-master` |
 | `tarea-u10/` | U10 — negociaciones manuales, lado api (opción A) | `feat/u10-negociacion-manual` (apilado sobre U9) |
