@@ -24,6 +24,9 @@ module.exports = {
     dialect: 'postgres',
   },
   production: {
+    // SQL de Sequelize apagado en producción: ruido y cuota de ingesta en New Relic (el APM ya mide
+    // cada consulta). DB_LOGGING=true lo reactiva para depurar.
+    logging: process.env.DB_LOGGING === 'true' ? console.log : false,
     username: process.env.DB_USER,
     password: process.env.DB_PASSWORD,
     database: process.env.DB_NAME,

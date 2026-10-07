@@ -59,12 +59,12 @@ async function handleNack(routingKey, nackResult) {
 // user_id AMQP al publicar. Esa verificación la hace LA CENTRAL sobre lo que nosotros
 // publicamos, no nosotros al consumir (ADR-001, addendum 2026-09-22).
 async function handleAccepted(routingKey, env) {
-    console.log(`[aceptado] routingKey=${routingKey} type=${env.type} msgId=${env.msgId}`);
+    console.log(`[aceptado] routingKey=${routingKey} type=${env.type} cycleId=${env.cycleId ?? '-'} msgId=${env.msgId}`);
     await withTransaction(async (client) => {
         // U4/U7: status-statement, transfer y demand-statement. Un duplicado (mismo idpk) no se
         // re-aplica, pero se responde igual que la primera vez (ADR-002).
         const applied = await applyToLedger(env, client);
-        if (applied.result !== 'ignored') console.log(`[ledger] ${applied.result} type=${env.type} idpk=${env.idpk}`);
+        if (applied.result !== 'ignored') console.log(`[ledger] ${applied.result} type=${env.type} cycleId=${env.cycleId ?? '-'} idpk=${env.idpk}`);
 
         // Rechazos de la central a algo que publicamos: quedan en el log (anomalía #5). U5 actúa
         // sobre REPORT_TOO_EARLY; los de propuestas (PRICE_ABOVE_CAP, OVER_CAPACITY, ...), U6.
