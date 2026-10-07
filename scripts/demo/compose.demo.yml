@@ -1,0 +1,25 @@
+# Override para la réplica local de demo (docs/demo-anomalias.md):
+#   docker compose -p esdemo -f docker-compose.yml -f scripts/demo/compose.demo.yml up -d --build
+# Los certificados se generan FUERA del repo (DEMO_CERTS): un .pem commiteado anula la entrega.
+services:
+  rabbit:
+    image: rabbitmq:3.13-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: city.TEST
+      RABBITMQ_DEFAULT_PASS: demo
+    volumes:
+      - ${DEMO_CERTS:-/tmp/energyshark-demo-certs}:/certs:ro
+      - ./scripts/demo/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+    ports:
+      - "127.0.0.1:5672:5672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_port_connectivity"]
+      interval: 5s
+      timeout: 10s
+      retries: 20
+    networks: [energyshark-net]
+  connector:
+    environment:
+      NODE_EXTRA_CA_CERTS: /certs/ca.pem
+    volumes:
+      - ${DEMO_CERTS:-/tmp/energyshark-demo-certs}:/certs:ro
