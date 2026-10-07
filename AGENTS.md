@@ -23,7 +23,6 @@ Relic (APM + infraestructura), AWS Budgets.
 
 Diagrama de componentes: `docs/arquitectura.md`.
 
-
 - `connector/`: consume el broker, valida el envelope, aplica al ledger, responde ack/nack/error por
   un **outbox transaccional**, corre el scheduler del ciclo y el sweeper de negociaciones. No expone HTTP.
 - `master/`: API REST de solo lectura más `POST /api/negotiations`, dos réplicas (`master1`,
