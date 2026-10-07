@@ -4,6 +4,7 @@ const { sendDueReports } = require('./reports');
 const { startLoop } = require('./loop');
 const pool = require('./db/pool');
 const { enqueue } = require('./outbox');
+const outboxRepo = require('./db/outboxRepo');
 const { buildEnvelope } = require('./protocol/responses');
 
 // Último request de status-statement (addendum #19). En memoria: tras un reinicio sale uno de inmediato.
@@ -21,6 +22,9 @@ async function requestStatusIfMissing(now) {
         consumptionMs: config.cycle.consumptionMs,
     });
     if (!missing) return false;
+    // Si el anterior sigue sin publicarse (broker caído), no se apila otro: al volver saldrían todos juntos
+    // (addendum 2 de #19).
+    if (await outboxRepo.hasPendingRequest('status-statement')) return false;
     const request = buildEnvelope('request', { data: { ask: 'status-statement' } });
     await enqueue(pool, request);
     lastStatusRequestAt = now;

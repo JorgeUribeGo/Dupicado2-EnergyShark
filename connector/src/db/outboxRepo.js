@@ -22,4 +22,13 @@ async function markSent(id, db = pool) {
     await db.query("UPDATE outbox_messages SET status = 'sent', sent_at = now() WHERE id = $1", [id]);
 }
 
-module.exports = { insert, fetchPending, markSent };
+// ¿Hay un request con este ask todavía sin publicar? (decisiones fundacionales §3, addendum 2 de #19)
+async function hasPendingRequest(ask, db = pool) {
+    const { rowCount } = await db.query(
+        "SELECT 1 FROM outbox_messages WHERE type = 'request' AND status = 'pending' AND payload->'data'->>'ask' = $1 LIMIT 1",
+        [ask],
+    );
+    return rowCount > 0;
+}
+
+module.exports = { insert, fetchPending, markSent, hasPendingRequest };

@@ -123,3 +123,13 @@ describe('validateEnvelope — accept (un mensaje válido de cada tipo relevante
         expect(result.action).toBe('accept');
     });
 });
+
+test('el detalle del NACK por schema no repite el prefijo data/ (B3 del testeo)', () => {
+    const result = validateEnvelope(Buffer.from(JSON.stringify({
+        idpk: randomUUID(), msgId: randomUUID(), type: 'demand-statement', timestamp: new Date().toISOString(),
+        sender: 'central', cycleId: 'cycle-1', data: { balance: { quantity: 10, valuePerKwh: 'caro' } },
+    })));
+    expect(result.action).toBe('nack');
+    expect(result.message).toContain('mensaje/data/balance/valuePerKwh must be number');
+    expect(result.message).not.toContain('data/data');
+});

@@ -257,7 +257,12 @@ run('scheduler del ciclo (integración con Postgres, tiempo simulado)', () => {
             const plus = (min) => new Date(t0.getTime() + min * 60e3);
             expect(await requestStatusIfMissing(t0)).toBe(true);
             expect(await requestStatusIfMissing(plus(1))).toBe(false);
-            expect(await requestStatusIfMissing(plus(5))).toBe(true);
+            // El primero sigue pending (broker caído): no se apila otro aunque pasaron los 5 min (addendum 2).
+            expect(await requestStatusIfMissing(plus(5))).toBe(false);
+            expect(await requests()).toHaveLength(1);
+            // Publicado el primero, el siguiente sí sale.
+            await pool.query("UPDATE outbox_messages SET status = 'sent' WHERE type = 'request'");
+            expect(await requestStatusIfMissing(plus(10))).toBe(true);
 
             const sent = await requests();
             expect(sent).toHaveLength(2);

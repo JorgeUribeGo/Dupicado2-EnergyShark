@@ -77,7 +77,7 @@ function validateEnvelope(rawBuffer) {
 
     const validate = validators[type];
     if (!validate(parsed)) {
-        const detail = ajv.errorsText(validate.errors, { separator: '; ' });
+        const detail = ajv.errorsText(validate.errors, { separator: '; ', dataVar: 'mensaje' });
         return nack({
             reason: 'MALFORMED_MESSAGE', code: 422, target: msgId,
             message: detail,
