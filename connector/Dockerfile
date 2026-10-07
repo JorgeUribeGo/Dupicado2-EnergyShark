@@ -1,4 +1,4 @@
-FROM node:20-alpine
+FROM node:22-alpine
 
 # Contexto de build = raíz del repo (ver docker-compose.yml): envelope.js resuelve los
 # schemas subiendo 3 niveles desde src/protocol/, igual que en local — para que esa cuenta
