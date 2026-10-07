@@ -20,6 +20,7 @@ sesión (sin subagentes). El texto en "Prompt utilizado" de cada archivo es lite
 | `tarea-agents-md/` | #18 — `AGENTS.md` compartido y plantilla de AI logs | `docs/agents-md` (#23) |
 | `tarea-jwt-master/` | #15 / U11 — middleware JWT en `master` (con visto bueno de Esteban y Jorge) | `feat/jwt-master` (#24, apilado sobre #22) |
 | `tarea-compose-ecr/` | #16 / I2 — compose con imágenes de ECR y puertos cerrados (con visto bueno de Jorge) | `feat/compose-ecr` (#25) |
+| `tarea-robustez-testeo/` | Arreglos del testeo: un solo `request` pendiente (B1), esperar migraciones (B2), detalle de NACK (B3) | `fix/robustez-connector` (apilado sobre `docs/demo-anomalias`) |
 | `tarea-agents-md-fix/` | `AGENTS.md` al día con #24 (doble validación del JWT, auth en local) y tabla de `prompt/README.md` ordenada | `docs/readme-uml` |
 | `tarea-demo-anomalias/` | Ensayo de las anomalías 1–4 sobre `main` y guía de la demo | `docs/demo-anomalias` (apilado sobre `docs/readme-uml`) |
 
